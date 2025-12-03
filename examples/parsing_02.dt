@@ -1,0 +1,7 @@
+main() {
+    if (10 == 20) {
+        if (ur_mom == cool) {
+            print("cool")
+        } else { print (":(") }
+    }
+}

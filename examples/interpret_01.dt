@@ -1,0 +1,43 @@
+add(l int, r int): int {
+    return l + r;
+}
+
+is_true(): bool {
+    return true;
+}
+
+mul(l int, r int): int {
+    return l * r;
+}
+
+recur_til(i int, n int): int {
+    if i < n:
+        return recur_til(i + 1, n);
+    else
+        return i;
+}
+
+get_string(): string {
+    return "im a string";
+}
+
+main(): int {
+    c = false;
+
+    /*Recursive test + plain if*/
+    if true {
+        c = c + 10;
+        c = c + recur_til(0, 40);
+    } else {
+        c = recur_til(0,7);
+    }
+    v = c + mul(10, add(420/2, 69.0));
+    return v;
+
+    /* gets resolved by resolve_fnarg_type */
+    /* return mul(10,10.5); */
+    
+    /* gets resolved by resolve_expr_type*/
+    /* return 10 * 10.5; */
+}
+

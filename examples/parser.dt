@@ -1,0 +1,11 @@
+
+
+main() { 
+    number = 1;
+    expression = 1 + 2 * (3 + (4 / 5)) + (6 - 7); 
+    empty_expr = ();
+    string = "string";
+    funcal = printints(2*5,10 + 10,30);
+    return (10 + 20);
+}
+

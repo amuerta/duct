@@ -1,0 +1,21 @@
+config = {
+    path = "~/.config/dt/";
+    version = 1.001;
+}
+
+// regular function
+hello(name: string): string {
+    return concat(hello,name);
+}
+
+// typeless func
+main() {
+    surname = string;
+    name = "this is a string";
+    surname = "this is predeclared string";
+
+    set = {
+        name = name;
+        surname = surname;
+    }
+}

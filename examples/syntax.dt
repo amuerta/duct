@@ -1,0 +1,139 @@
+/* block comment */
+// single line comment
+
+// global variables
+num = 10;
+str = "Josh";
+bl  = true;
+flt = 10.5;
+
+// enum - just a list of numeric constants
+enum fmode {
+    READ    1,
+    WRITE   2,
+    EXEC    4,
+}
+
+// you can have enum without a namespace
+enum {
+    ONE 1,
+    TWO ,
+}
+
+// unamed object
+obj = { name = "file.txt",  mode = fmod.READ }
+
+// array - first element of the array determines the type
+arr  = [1,2,3,4]
+// otherwise do this
+arr2 = int[..];
+
+
+// function
+is_odd(n int) : bool {
+    return n % 2 == 1;
+}
+
+// named object - type
+type person ( name string, age int, height float )
+
+// denote this object with its name
+// & means reference to object instead of copying the value
+// . accesses the field of object
+person_age(p &person) {
+    p.age += 1;
+}
+
+person_new(name string, age int): person {
+    return {
+        name = name,
+        age = age
+    };
+}
+
+// all fields have to be named
+vec2_zero(): (x f32, y f32) {
+    return {0, 0};
+}
+
+include io.{file_length, file_open, file_getc};
+// from 'io':
+//  file_open(path string, mode int): (ok bool, file cptr);
+
+print_file(path string) {
+    f = file_open(path,READ);
+    if f.ok:
+        loop i to file_length(f.file):
+            print(file_getc(f.file, i));
+}
+
+// entry point
+// to return something do main() : int {...}
+// by default will be void, which is nothing
+main() {
+    // if statement
+    if true {
+        // build-in print function
+        print("it works! ... \n");
+    } else
+        print("oh no.........\n");
+
+    if 10: 
+        print("i can do this too\n");
+    else 
+        print("or not..\n");
+
+    // for loop
+    for i=0; i<10; i++:
+        print(i, "\n");
+    
+    // 'loop' loop
+    loop i, /*be zero by defualt*/ 10 {
+        print("#",i,"\n");
+    }
+    loop i,  20..40:
+        print(i, "\n");
+    
+    // switch (works on almost anything)
+    // arrays and objects are compared first by length
+    // then by c's memcmp()
+    s = "car"
+    switch s {
+        "two"       : print("no\n");
+        "airplane"  : print("no\n");
+        "car"       : {
+            print("yay\n");
+            print("you guessed\n");
+        };
+    
+    }
+
+
+    // TODO: think about it
+
+    // you can pass function body as argument into functions
+    // essentially it will run the block of code like function
+    // with variables that are given to you from context
+
+    // typecheking is done on arguments, 
+    // this means you have know what you are doing
+    // also you can alias names
+    //  syntax: fn(arg1,arg2,...) {}
+
+    // qsort(items *, sorter fn(*,*):int );
+
+    // The star * operator means "ANY" type
+    // essentially it disables type checking
+    // you can constuct a varible from this "ANY" type
+    // by using `cast(any_var, typeof(any_var))`
+
+    qsort([1,2,3,4], fn(a,b) {
+        return a > b;
+    });
+
+    i_wanna_crash = false;
+    if i_wanna_crash {
+        qsort([1,"im a string", 3.0], fn(a,b) { return a > b;});
+    }
+
+}

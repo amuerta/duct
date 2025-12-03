@@ -1,0 +1,29 @@
+// math.h
+dlload "math.o" {
+    sqrt(int): int;
+}
+
+can_sqrt(n: int): { ok:bool, n:int } {
+    if n > 0:
+        return { true, sprt(n) }
+    else
+        return { false, 0 };
+}
+
+array_add_one(ns: ref int[]) {
+    for i=0; i < ns.length; i++ {
+        ns[i] += 1;
+    }
+}
+
+main() {
+    csqrt = can_sqrt(10);
+    if csqrt.ok {
+        print("sqrt of ", 10, " is: ", csqrt.n);
+    } else print("failed to sqrt")
+
+    arr = [1,2,3,4,5,6];
+    print("array before: ", arr);
+    array_add_one(arr);
+    print("array after: ", arr);
+}

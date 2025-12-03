@@ -1,0 +1,24 @@
+// 00 - Basics
+
+// constants
+number: 10;
+flt:    10.3;
+unlong: ul(10); // u64
+str:    "jack";
+array:  [10,20,30];
+obj:    { name: "string of name", age: 22 };
+
+// functions
+
+add_one: (n1, n2) {
+    return n1 + n2;
+}
+
+
+main: () {
+    string = "Hello world";
+    loop i; string.len {
+        print(string[i]);
+    }
+    print("\n");
+}
