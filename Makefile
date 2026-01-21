@@ -1,7 +1,14 @@
 build: 
-	clang -o main ./src/main.c -Wall -Wno-c11-extensions -Wextra -ggdb -std=c99 -pedantic #\
-		#-fsanitize=address 
-	# last cheked Sun Aug 13 17:23
+	clang -o main ./src/compiler/dt.c\
+		-ggdb\
+		-std=c99\
+		# -pedantic
+	# -Wall -Wextra 
+	# -fsanitize=address 
+	# last cheked Wed 13 22:22
+
+loc:
+	wc -lc ./src/{compiler/*.{h,c},vm/*.{h,c}}
 
 run: build
 	./main

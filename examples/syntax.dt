@@ -8,7 +8,7 @@ bl  = true;
 flt = 10.5;
 
 // enum - just a list of numeric constants
-enum fmode {
+enum {
     READ    1,
     WRITE   2,
     EXEC    4,
@@ -20,120 +20,32 @@ enum {
     TWO ,
 }
 
-// unamed object
-obj = { name = "file.txt",  mode = fmod.READ }
-
-// array - first element of the array determines the type
-arr  = [1,2,3,4]
-// otherwise do this
-arr2 = int[..];
-
-
-// function
-is_odd(n int) : bool {
-    return n % 2 == 1;
+// simple function
+add(l,r) {
+    return l + r
 }
 
-// named object - type
-type person ( name string, age int, height float )
-
-// denote this object with its name
-// & means reference to object instead of copying the value
-// . accesses the field of object
-person_age(p &person) {
-    p.age += 1;
-}
-
-person_new(name string, age int): person {
-    return {
-        name = name,
-        age = age
-    };
-}
-
-// all fields have to be named
-vec2_zero(): (x f32, y f32) {
-    return {0, 0};
-}
-
-include io.{file_length, file_open, file_getc};
-// from 'io':
-//  file_open(path string, mode int): (ok bool, file cptr);
-
-print_file(path string) {
-    f = file_open(path,READ);
-    if f.ok:
-        loop i to file_length(f.file):
-            print(file_getc(f.file, i));
-}
-
-// entry point
-// to return something do main() : int {...}
-// by default will be void, which is nothing
 main() {
-    // if statement
-    if true {
-        // build-in print function
-        print("it works! ... \n");
-    } else
-        print("oh no.........\n");
+    n = 10
+    f = 10.0
+    b = true
+    s = "hello world!\n"
+    arr = [1,2,3,4]
+    list = <1,2,"can hold different types unlike arrays",4>
+    obj = { name = "dude", age = 32 }
 
-    if 10: 
-        print("i can do this too\n");
-    else 
-        print("or not..\n");
-
-    // for loop
-    for i=0; i<10; i++:
-        print(i, "\n");
-    
-    // 'loop' loop
-    loop i, /*be zero by defualt*/ 10 {
-        print("#",i,"\n");
+    if n > 10 {
+        print("number n is is greater than 10: \n", n)
+    } else {
+        print("less or equal to 10\n")
     }
-    loop i,  20..40:
-        print(i, "\n");
     
-    // switch (works on almost anything)
-    // arrays and objects are compared first by length
-    // then by c's memcmp()
-    s = "car"
-    switch s {
-        "two"       : print("no\n");
-        "airplane"  : print("no\n");
-        "car"       : {
-            print("yay\n");
-            print("you guessed\n");
-        };
-    
+    array = array_fill(10, 1)
+    for i = 0 to 10 {
+        print("i",i,  " = ", array[i])
     }
 
-
-    // TODO: think about it
-
-    // you can pass function body as argument into functions
-    // essentially it will run the block of code like function
-    // with variables that are given to you from context
-
-    // typecheking is done on arguments, 
-    // this means you have know what you are doing
-    // also you can alias names
-    //  syntax: fn(arg1,arg2,...) {}
-
-    // qsort(items *, sorter fn(*,*):int );
-
-    // The star * operator means "ANY" type
-    // essentially it disables type checking
-    // you can constuct a varible from this "ANY" type
-    // by using `cast(any_var, typeof(any_var))`
-
-    qsort([1,2,3,4], fn(a,b) {
-        return a > b;
-    });
-
-    i_wanna_crash = false;
-    if i_wanna_crash {
-        qsort([1,"im a string", 3.0], fn(a,b) { return a > b;});
-    }
-
+    vector = { x = 10, y = 20 }
+    vector.x = vector.x*2
+    assert(vector.x == vector.y, "")
 }

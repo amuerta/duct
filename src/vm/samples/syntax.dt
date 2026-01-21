@@ -1,0 +1,53 @@
+script_config = {
+    version = 1.10,
+    author  = "me",
+    lockfile = "lockfile.dt",
+    options = {
+        memory_allocation_strategy = RT.ALLOCSTRAT.STRICT
+    }
+}
+
+add(l, r) {
+    return l + r
+}
+
+greet(name) {
+    return concat("Hello", name)
+}
+
+main() {
+    number = 10
+    float  = 10.0
+    string = "Hello"
+    object = {
+        name = "ONE",
+        age  = 21,
+        info = {}
+    }
+    array = [10,20,30]
+    list = <10,20,30>
+    object_array = [{n = 1}, {n = 2},  {n = 3}]
+    object_list  = <{n = 1}, {n = 10}, {n = 100}>
+    
+    print(greet("Williams"))
+    print(object.name)
+    resize(array, 11)
+    array[10] = 100 
+    print(array[0])
+    print(array)
+
+    if number >= 10  {
+        print("Number is greater or equal to ", number)
+    }
+
+    loop i = 0 to add(10,20) {
+        print(i)
+    }
+    
+    n = 10
+    while n > 0 {
+        print(n)
+        n--
+    }
+
+}
