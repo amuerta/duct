@@ -49,47 +49,49 @@
 #define PARSER_TRACE  
 #include <stdio.h>
 #define STACK_STARTING_CAPACITY 1024
-#include "dtc.h"
-#include "../vm/dtvm.h"
+#include "compiler/dtc.h"
+#include "vm/dtvm.h"
 
 // MAIN
 #if 1
 
-
 typedef struct {
     DtParser        parser;
-} DtCompiler;
+    Dtvm            vm;
+    FILE            *tracef,
+                    *errorf,
+                    *outputf;
+} DtInterpreter;
 
-bool dt_compile_assembly_from_string(void* compiler, const char* source, size_t length) {
+bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* source, size_t length) {
     bool result = true;
-    DtCompiler* c = compiler;
-    c->parser.lexer = DtTokenizer_init(source, length);
+    DtInterpreter* itrp = interpreter;
+    itrp->parser.lexer = DtTokenizer_init(source, length);
+    itrp->parser.tracef = interpreter->tracef; 
+    itrp->parser.tracef = interpreter->tracef; 
+    itrp->vm.writef     = interpreter->outputf; 
 
     // DtNode* root = dtp_parse(&c->parser, 0);
-    dtp_parse(&c->parser, 0);
+    dtp_parse(&(itrp->parser), 0);
     //DtNode* root = dtp_block(&parser, 0, false);
-    
-    printf("\n");
     // dtp_print_ast(root, 0, stdout);
-    arena_free(&c->parser.allocator);
+    arena_free(&itrp->parser.allocator);
     return result;
 }
 
-
+// TODO: api nob style like `cmd_append()`
 #define sb_fmt(sb) (int)sb.count, sb.items
 #define str_multiline(...) #__VA_ARGS__
 
-void dt_compile_and_run(Hlvm* vm, DtCompiler* dtc, const char* source) {
-
-    dt_compile_assembly_from_string(dtc, source, strlen(source));
-    // printf("\n'\n%.*s'\n\n", sb_fmt(dtc->parser.output));
-
+void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
+    DtInterpreter*  itrp    = interpreter;
+    Dtvm*           vm      = &(itrp->vm);
+    dt_compile_assembly_from_string(interpreter, source, strlen(source));
     String assembly = {
-        dtc->parser.output.items,
-        dtc->parser.output.count
+        itrp->parser.output.items,
+        itrp->parser.output.count
     };
-
-    dtvm_compile_from_asm(vm, assembly);
+    dtvm_compile_from_asm(vm, assembly, interpreter->tracef);
 
     // for(size_t i = 0; i<vm->functions.count; i++) {
     //     printf("vm.functions[%lu] = '%.*s'\n", i, str_fmt(vm->functions.items[i].id));
@@ -105,12 +107,26 @@ void dt_compile_and_run(Hlvm* vm, DtCompiler* dtc, const char* source) {
     // dtvm_add_function(&vm, fn2);
     dtvm_call(vm, string("main"), NULL, 0);
 
-    printf("\n\nSTACK: \n");
-    dtvm_print_stack(vm);
-    printf("-----: \n");
-    // dtvm_function_free(&fn1);
-    // dtvm_function_free(&fn2);
+    // dtvm_print_stack(vm);
+    dtvm_free(&itrp->vm);
 }
+
+void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
+    dtvm_compile_from_asm(&(inter->vm), str_make(assembly), inter->tracef);
+}
+
+// TODO:
+// function signatures are checked and added at compilation time
+// arrays are linear and one type only
+// lists are type ignorant, can be of any type
+// objects are like lists, but each member has NAME (identifier).
+// implement loops
+// implement if statements
+// implement arrays and indexing.
+// implement lists.
+// 
+// LATER:
+// - constant folding
 
 int main(void) {
     // const char* file = "./examples/parsing_00.dt";
@@ -121,21 +137,26 @@ int main(void) {
     // }
 
     const char* source = str_multiline(
+        add(a,b) { return a + b }
         main() {
-            return 10 + 21 * (2 - 1)
+            a = ------------60
+            b = 7
+            write(add(a,b))
         }
     );
-
-    DtCompiler compiler = {0};
-    Hlvm vm = {
-        .writef = stdout,
-        .tracef = stdout,
+    DtInterpreter interp = {
+        .tracef  = stderr,
+        .outputf = stdout
     };
-    dt_compile_and_run(&vm, &compiler, source);
+    dt_append_assembly(&interp, 
+            "fn write v\n"
+                "load v\n"
+                "wrt\n"
+                "pop\n"
+            "endfn\n"
+    );
+    dt_compile_run_reset(&interp, source);
 
-
-    
-    dtvm_free(&vm);
     // TODO: check for empty file
     // free(txt);
 }

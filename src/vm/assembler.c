@@ -1,5 +1,9 @@
 #include "vm_declaration.h"
 
+#define dta_trace(tracef, ...) if(tracef) {\
+    fprintf(tracef, __VA_ARGS__);\
+}
+
 void dtvm_instructions_free(Instructions* code) {
     if(code->items) free(code->items);
     memset(code, 0, sizeof(*code));
@@ -320,6 +324,7 @@ end:
 
 
 String dtvm_bytecode_compile(
+        FILE* trace_file,
         Arena* allocator, 
         Instructions* code, 
         String source, 
@@ -351,8 +356,8 @@ String dtvm_bytecode_compile(
             // get args names
             size_t args     =  0 ;
             String fn_arg   = {0};
-
-            printf("# Emmiting bytecode for '%.*s': \n", str_fmt(fn_name));
+            dta_trace(trace_file, "# Emmiting bytecode for '%.*s': \n", str_fmt(fn_name));
+            
             do {
                 fn_arg = str_split_by_chars(&line, " ");
                 if (!str_is_empty(fn_arg)) {
@@ -396,11 +401,11 @@ String dtvm_bytecode_compile(
                 result.as.label.name.len--;
                 result.as.label.name.ptr++;
 
-                printf("\t> found label: '%.*s : %i'\n", str_fmt(result.as.label.name), 
+                dta_trace(trace_file, "\t> found label: '%.*s : %i'\n", str_fmt(result.as.label.name), 
                         ip - 1);
                 da_append(&labels, result.as.label);
             } else {
-                fprintf(stderr, 
+                dta_trace(trace_file, 
                         "Failed at line when parsing label: #%i:'%.*s', error: %s\n", 
                         i, str_fmt(line), dtvm_get_error(stat));
                 break;
@@ -450,7 +455,7 @@ String dtvm_bytecode_compile(
                 
     for(size_t i = 0; i < code->count; i++) {
         Instruction inst = code->items[i];
-        printf("%.6lu\t%s\n", i, dtvm_decompile_instruction(inst));
+        dta_trace(trace_file,"%.6lu\t%s\n", i, dtvm_decompile_instruction(inst));
     }
 
     da_free(labels);
@@ -560,13 +565,15 @@ Function dtvm_function_pack(String name,  Instructions* code, String* argv, size
     return fn;
 }
 
-void dtvm_compile_from_asm(Hlvm* vm, String source) {
+void dtvm_compile_from_asm(Dtvm* vm, String source, FILE* trace_file) {
+    assert(!str_is_empty(source));
     Arena allocator     = {0};
     //String fn_name         = {0};
     String leftovers    = source;
     String fn_name      = {0}; 
     int i = 0;
 
+    dta_trace(trace_file, "\n### COMPILING ASSEMBLY ###\n");
     do {
         // TODO: figure out a way to reset code without having problems.
         Instructions code   = {0};
@@ -579,17 +586,19 @@ void dtvm_compile_from_asm(Hlvm* vm, String source) {
             .capacity = 64
         };
 
-        leftovers = dtvm_bytecode_compile(&allocator, 
+        leftovers = dtvm_bytecode_compile(
+                trace_file,
+                &allocator, 
                 &code, 
                 leftovers, 
                 &fn_name, 
                 &argv);
         
-        printf("\tARGS: [ ");
+        dta_trace(trace_file,"\tARGS: [ ");
         for(size_t i = 0; i < argv.count; i++) {
-            printf("%.*s ", str_fmt(argv.items[i]));
+            dta_trace(trace_file,"%.*s ", str_fmt(argv.items[i]));
         }
-        printf("]\n");
+        dta_trace(trace_file, "]\n");
 
         Function fn = dtvm_function_pack(fn_name, &code, argv.items, argv.count);
         da_append(&(vm->functions), fn);

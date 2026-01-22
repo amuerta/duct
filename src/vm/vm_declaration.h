@@ -105,7 +105,7 @@ enum {
 
 enum {
     DTVM_CONFIG_TRACE_LOG
-} EHlvmConfig; 
+} EDtvmConfig; 
 
 enum {
     ELINE_INSTRUCTION,
@@ -232,13 +232,12 @@ typedef struct {
     Functions       functions;
 
     size_t          sp;
-    Object          exit_object;
+    Object          returned_object;
     Object          stack[DTVM_STACK_CAPACITY];
    
     Scopes          scopes;
-
     FILE            *tracef, *writef;
-} Hlvm;
+} Dtvm;
 
 /*  FUNCTION DECLARATIONS */
 
@@ -263,18 +262,18 @@ Object      object_store(Object* ref, Object value);
 Object*     object_reserve_or_get(ObjectMap* map, String id);
 
 // DT SCOPE(S)
-ObjectMap*  dtvm_get_scope(Hlvm* vm);
+ObjectMap*  dtvm_get_scope(Dtvm* vm);
 void        dtvm_free_scope(ObjectMap* scope);
 
 // VM INTERNALS
-Function*   dtvm_get_function(Hlvm* vm, String fnid);
-Object      dtvm_call(Hlvm* vm, String fnid, Object* argv, int argc);
-void        dtvm_if(Hlvm* vm, Function* fn);
-void        dtvm_push(Hlvm* vm, Object value);
+Function*   dtvm_get_function(Dtvm* vm, String fnid);
+Object      dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc);
+void        dtvm_if(Dtvm* vm, Function* fn);
+void        dtvm_push(Dtvm* vm, Object value);
 
 // ASSEMBLER
 
 // VM API
-void dtvm_compile_from_asm(Hlvm* vm, String source);
+void dtvm_compile_from_asm(Dtvm* vm, String source, FILE* trace_file);
 
 #endif//__DTVM_DEFINITIONS_H 

@@ -1,21 +1,21 @@
 #include "vm_declaration.h"
 
-void dtvm_push(Hlvm* vm, Object value) {
+void dtvm_push(Dtvm* vm, Object value) {
     assert(vm->sp != DTVM_STACK_CAPACITY && "Stack overflow");
     vm->stack[vm->sp++] = value;
 }
 
-Object dtvm_pop(Hlvm* vm) {
+Object dtvm_pop(Dtvm* vm) {
     assert(vm->sp != 0 && "Stack underflow");
     return vm->stack[--vm->sp];
 }
 
-Object dtvm_peek(Hlvm* vm) {
+Object dtvm_peek(Dtvm* vm) {
     assert(vm->sp != 0 && "Stack underflow");
     return vm->stack[vm->sp-1];
 }
 
-Object* dtvm_refer(Hlvm* vm) {
+Object* dtvm_refer(Dtvm* vm) {
     assert(vm->sp != 0 && "Stack underflow");
     return vm->stack + vm->sp-1;
 }
@@ -43,13 +43,13 @@ void objectmap_print_values(ObjectMap m) {
         if(hc_map_key_is_empty(key)) continue;
         String str = {key.items, key.count};
 
-        printf("$%.*s = ", str_fmt(str));
-        printf("%s", object_to_string(m.items[i]));
-        printf("\n");
+        // printf("$%.*s = ", str_fmt(str));
+        // printf("%s", object_to_string(m.items[i]));
+        // printf("\n");
     }
 }
 
-void dtvm_print_stack(Hlvm *vm) {
+void dtvm_print_stack(Dtvm *vm) {
     Object* stack = vm->stack;
     Object* iter = stack;
     for(size_t i = 0;  
@@ -253,7 +253,7 @@ Object object_eq(Object l, Object r) {
     return o;
 }
 
-// Object dtvm_add_function(Hlvm* vm, Function fn) {
+// Object dtvm_add_function(Dtvm* vm, Function fn) {
 //     vm->functions.items[vm->functions.count++] = fn;
 // }
 
@@ -277,7 +277,7 @@ void object_write(FILE* f, Object o) {
     }
 }
 
-void dtvm_exec_step(Hlvm* vm, Function* fn, Instruction inst, int config) {
+void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
     // Get current object pool
     ObjectMap* scope = dtvm_get_scope(vm);
 
@@ -303,6 +303,11 @@ void dtvm_exec_step(Hlvm* vm, Function* fn, Instruction inst, int config) {
 
         case DTI_RET:
             {
+                // entry point
+                if(vm->scopes.top == 0) {
+                    // TODO mirgrate memory if needed.
+                    vm->returned_object = dtvm_pop(vm);
+                }
                 return;
             } break;
 
@@ -319,7 +324,7 @@ void dtvm_exec_step(Hlvm* vm, Function* fn, Instruction inst, int config) {
 
                 vm->scopes.top++;
                 dtvm_call(vm, id, fn_args, fn->argc);
-                printf("call to %.*s\n", str_fmt(id));
+                // printf("call to %.*s\n", str_fmt(id));
                 vm->scopes.top--;
             } break;
 
@@ -405,7 +410,7 @@ void dtvm_exec_step(Hlvm* vm, Function* fn, Instruction inst, int config) {
     }
 }
 
-Function* dtvm_get_function(Hlvm* vm, String fnid) {
+Function* dtvm_get_function(Dtvm* vm, String fnid) {
     Function* fn = 0;
     Functions fns = vm->functions;
     for(size_t i = 0; i < fns.count; i++) {
@@ -433,7 +438,7 @@ void dtvm_free_scope(ObjectMap* s) {
     memset(s, 0, sizeof(*s));
 }
 
-ObjectMap* dtvm_get_scope(Hlvm* vm) {
+ObjectMap* dtvm_get_scope(Dtvm* vm) {
     ObjectMap* current = vm->scopes.buf + vm->scopes.top;
     if(vm->scopes.top >= vm->scopes.count) {
         vm->scopes.count++;
@@ -442,7 +447,7 @@ ObjectMap* dtvm_get_scope(Hlvm* vm) {
     return current;
 }
 
-Object dtvm_call(Hlvm* vm, String fnid, Object* argv, int argc) {
+Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
     // find function or return result 
     Function *fn = dtvm_get_function(vm, fnid);
     assert(fn && "Called function is undefined");
@@ -473,7 +478,7 @@ Object dtvm_call(Hlvm* vm, String fnid, Object* argv, int argc) {
     return OBJECT_NULL;
 }
 
-void dtvm_free(Hlvm* vm) {
+void dtvm_free(Dtvm* vm) {
     for(size_t i = 0; i < vm->functions.count; i++) 
         free(vm->functions.items[i].memory);
     for(size_t i = 0; i < vm->scopes.count; i++) {

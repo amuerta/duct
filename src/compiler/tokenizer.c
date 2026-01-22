@@ -445,6 +445,13 @@ const char* __tkn_temp_cstr(Token t, bitmask8_t print_flags) {
 	return token;
 }
 
+
+#define tkn_fmt(s) (int)(s.length), (s.data)
+
+TknSlice tkn_as_slice(Token t) {
+    return t.data.as_word;
+}
+
 const char* Token_temp_cstr(Token t)  {
 	return __tkn_temp_cstr(t,0xFF);
 }

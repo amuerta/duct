@@ -38,41 +38,6 @@ typedef enum {
 } TokenId;
 
 typedef enum {
-    NK_NULL,
-    NK_SPLITTER,
-    NK_ROOT,
-    NK_FUNCTION_DECL,
-    NK_FUNCTION_CALL,
-    NK_FUNCTION_ARGS,
-    NK_BLOCK,
-    NK_SYMBOL_DECL,
-    NK_STATEMENT,
-    NK_IF_STATEMENT,
-    NK_ELSEIFS,
-    NK_IF,
-    NK_ELSE,
-    NK_ELSEIF,
-    NK_RETURN,
-    NK_EXPRESSION,
-    NK_EQALITY,
-    NK_COMPARISON,
-    NK_TERM,
-    NK_FACTOR,
-    NK_PRIMARY,
-    NK_RVALUE,
-    NK_VARIABLE,
-    NK_ARRAY,
-    NK_OBJECT,
-    NK_TYPE,
-    NK_BOOLIT,
-    NK_INTLIT,
-    NK_FLTLIT,
-    NK_CHRLIT,
-    NK_STRLIT,
-    NK_IDENTIFIER,
-} DtNodeKind;
-
-typedef enum {
     NKP_IS_ADD      = 1,
     NKP_IS_MUL      = 2,
     NKP_HAS_UNARY   = 4,
@@ -80,45 +45,6 @@ typedef enum {
     NKP_IS_CMP_EQ   = 16,
     NKP_IS_CMP_GT   = 32,
 } DtNodeKindProperties;
-
-const char* DT_NODE_KIND_STR[] = {
-    [NK_NULL]                  = "(NULL)",
-    [NK_SPLITTER]              = "--- split ---",
-    [NK_ROOT]                  = "root",
-    [NK_FUNCTION_DECL]         = "function decl",
-    [NK_FUNCTION_CALL]         = "function call",
-    [NK_FUNCTION_ARGS]         = "function args",
-    [NK_SYMBOL_DECL]           = "symbol decl",
-    [NK_STATEMENT]             = "statement",
-    
-    [NK_IF_STATEMENT]          = "if statement",
-    [NK_IF]                    = "if",
-    [NK_ELSE]                  = "else",
-    [NK_ELSEIF]                = "elseif",
-    [NK_ELSEIFS]               = "elseif-list",
-    [NK_RETURN]                = "return",
-    [NK_BLOCK]                 = "block",
-
-    [NK_EQALITY]               = "equality",
-    [NK_COMPARISON]            = "comparison",
-    [NK_TERM]                  = "term",
-    [NK_FACTOR]                = "factor",
-    [NK_PRIMARY]               = "primary",
-    [NK_EXPRESSION]            = "expression",
-
-    [NK_TYPE]                  = "type",
-    [NK_VARIABLE]              = "variable",
-    [NK_RVALUE]                = "rvalue",
-    [NK_ARRAY]                 = "array",
-    [NK_OBJECT]                = "object",
-    [NK_IDENTIFIER]            = "identifier",
-    
-    [NK_BOOLIT]                = "boolean",
-    [NK_INTLIT]                = "int",
-    [NK_FLTLIT]                = "float",
-    [NK_CHRLIT]                = "char",
-    [NK_STRLIT]                = "string",
-};
 
 typedef char            byte;
 typedef unsigned char   ubyte;
@@ -155,7 +81,7 @@ typedef struct {
 typedef struct DtNode {
     Token           source_location;// for error checking
 
-    DtNodeKind      kind;
+    // DtNodeKind      kind;
     int             properties; // is term add or subtract?
     int             type;
     Token           identifier;
@@ -165,25 +91,9 @@ typedef struct DtNode {
 } DtNode;
 
 typedef struct {
-    const char** items;
-    size_t       count;
-    size_t       capacity;
-} DtStrings;
-
-typedef struct {
-    const char*     file_name;
-    const char*     source;
-    bool            abort;
-    bool            recorded_error;
-    int             error_count;
-    int             warning_count;
-    StringBuilder   error_builder;
-    DtStrings       errors;
-} DtStatus;
-
-typedef struct {
-    DtStatus*       status;
     StringBuilder   output;
+    FILE*           tracef; // same as in `DtInterpreter`
+    FILE*           errorf; // same as in `DtInterpreter`
 
     size_t      current;
     size_t      requested_tokens,
@@ -197,6 +107,7 @@ typedef struct {
     
     Arena           allocator;
 } DtParser;
+
 
 // since i use my generic tokenizer here,
 // i need to initilize Duct tokenizer 
@@ -282,13 +193,46 @@ char* dt_load_file(const char* path) {
 //
 
 #ifdef PARSER_TRACE
-#define dt_trace(name, depth, ...)\
-        fprintf(stderr, "%*.s> %s", depth, "\t", name);\
-        fprintf(stderr, ""__VA_ARGS__);\
-        fprintf(stderr, "\n");
+#define dtp_trace_recursion(p, name, depth, ...) if(p->tracef) {\
+        fprintf(p->tracef, "%*.s> %s", depth, "\t", name);\
+        fprintf(p->tracef, ""__VA_ARGS__);\
+        fprintf(p->tracef, "\n");\
+}
 #else
-#define dt_trace(name,depth, ...) /* __VA_ARGS__ */
+#define dtc_trace_recursion(name,depth, ...) /* __VA_ARGS__ */
 #endif
+
+typedef enum {
+    DT_PNKIND_ERROR,
+    DT_PNKIND_OK,
+    DT_PNKIND_VALUE,
+} DtParseNodeKind;
+
+typedef struct {
+    bool negative_sign;
+    bool foldable_constant;
+} DtParseValue;
+
+typedef struct {
+    DtParseNodeKind     kind;   
+    size_t              instructions_generated;
+    union {
+        DtParseValue    value;
+    } as;
+} DtParseResult;
+
+DtParseResult dtp_error(void) {
+    const DtParseResult r = {0}; return r;
+}
+
+bool dtp_is_ok(DtParseResult r) { return r.kind >= DT_PNKIND_OK; };
+
+DtParseResult dtp_ok(void) {
+    const DtParseResult r = {.kind = DT_PNKIND_OK }; return r;
+}
+
+#define dtp_ok_or_return(e)\
+    if (!dtp_is_ok(e)) return e; 
 
 void dtp_print_token_buffer(DtParser p) {
     printf("current: %lu\t", p.current);
@@ -418,7 +362,7 @@ Slice dtp_get_line(const char* source, int r) {
     return s;
 }
 
-void dtp_error_message(const char* message, int r, int c) {
+void dtp_error_message(FILE* out, const char* message, int r, int c) {
     //Slice line = dtp_get_line(stat->source, r);
     /*
     sb_append(sb, 
@@ -449,27 +393,24 @@ void dtp_error_message(const char* message, int r, int c) {
 }
 
 
-void dtp_error_token(Token t, const char* message) {
-    assert(0);
-    dtp_error_message(message, t.row, t.col); //!dtp_valid_token(t));
+DtParseResult dtp_error_token(FILE* out, Token t, const char* message) {
+    dtp_error_message(out, message, t.row, t.col); 
+    return dtp_error();
 }
 
-#define dtp_expect_str(P,T,S,E) if (!dtp_match_str(T, S)) {\
-    assert(0);\
-    dtp_error_token(T, E);\
-    return NULL;\
-}
+#define dtp_expect_str(P,T,S,E) (!dtp_match_str(T, S)) ? \
+    dtp_error_token((P)->errorf, T, E) : dtp_ok();
 
 #define dtp_expect_kind(P,T,K,E) if (!dtp_match_kind(T, K)) {\
     assert(0);\
-    dtp_error_token(T, E);\
-    return NULL;\
+    dtp_error_token((P)->errorf, T, E);\
+    return dtp_error();\
 }
     
 #define dtp_expect_sym(P,T,S,E) if (!dtp_match_sym(T, S)) {\
     assert(0);\
-    dtp_error_token(T, E);\
-    return NULL;\
+    dtp_error_token((P)->errorf, T, E);\
+    return dtp_error();\
 }
 
 #define dtp_abort(P, E) do { fprintf(stderr,E); __asm__("int3"); } while(0)
@@ -561,37 +502,27 @@ DtNode* dtp_node_append(DtNode* father, DtNode* children) {
     return father;
 }
 
-typedef enum {
-    DT_PNKIND_OK,
-    DT_PNKIND_VALUE,
-} DtParseNodeKind;
 
-typedef struct {
-    bool negative_sign;
-    bool foldable_constant;
-} DtParseValue;
+DtParseResult dtp_expression              (DtParser* p, int depth) ;
+DtParseResult dtp_variable                (DtParser* p, int depth) ;
+DtParseResult dtp_rvalue                  (DtParser* p, int depth) ;
+DtParseResult dtp_function_declaration    (DtParser* p, int depth) ;
+DtParseResult dtp_statement               (DtParser* p, int depth) ;
+DtParseResult dtp_function_call           (DtParser* p, int depth) ;
+DtParseResult dtp_if_statement            (DtParser* p, int depth) ;
+DtParseResult dtp_block                   (DtParser* p, int depth, bool step_at_last) ;
 
-typedef struct {
-    DtParseNodeKind kind;   
-    union {
-        DtParseValue value;
-    } as;
-} DtParseNode;
-
-
-bool dtp_expression              (DtParser* p, int depth) ;
-bool dtp_variable                (DtParser* p, int depth) ;
-bool dtp_rvalue                  (DtParser* p, int depth) ;
-bool dtp_function_declaration    (DtParser* p, int depth) ;
-bool dtp_statement               (DtParser* p, int depth) ;
-bool dtp_function_call           (DtParser* p, int depth) ;
-bool dtp_if_statement            (DtParser* p, int depth) ;
-bool dtp_block                   (DtParser* p, int depth, bool step_at_last) ;
+DtParseResult dtp_comparison  (DtParser*, int);
+DtParseResult dtp_equality    (DtParser*, int);
+DtParseResult dtp_factor      (DtParser*, int);
+DtParseResult dtp_term        (DtParser*, int);
+DtParseResult dtp_primary     (DtParser*, int);
+DtParseResult dtp_unary       (DtParser*, int);
 
 
 
 // TODO: rename NK_[IF,ELSE,ELIF] to NK_BRANCH
-bool dtp_if_statement            (DtParser* p, int depth)  {
+DtParseResult dtp_if_statement            (DtParser* p, int depth)  {
     enum { 
         BRANCH_IF,
         BRANCH_ELIF, 
@@ -630,7 +561,7 @@ parse_branch_again: ;
         goto parse_branch_again;
     }
 
-    return true;
+    return dtp_ok();
 }
 
 // TODO: add whole bunch of stuff like:
@@ -640,9 +571,9 @@ parse_branch_again: ;
 // - switch
 // + return
 // etc...
-bool dtp_statement(DtParser* p, int depth) {
+DtParseResult dtp_statement(DtParser* p, int depth) {
     StringBuilder* sb = &p->output;
-    dt_trace("statement:", depth, );
+    dtp_trace_recursion(p, "statement:", depth, );
     // 'return'
     if (dtp_match_str(dtp_ahead(p), "return")) {
         // remember to step
@@ -679,16 +610,13 @@ bool dtp_statement(DtParser* p, int depth) {
     // variable
     else {
         Token before = p->current_token;//dtp_ahead(p);
-        if (dtp_variable(p, depth + 1)) {
-            dtp_error_token(before, "Failed to parse variable inside statement");
-            // return NULL;
-        }
+        dtp_ok_or_return(dtp_variable(p, depth + 1));
         // return self;
     }
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_function_return_type(DtParser* p, int depth) {
+DtParseResult dtp_function_return_type(DtParser* p, int depth) {
     // DtNode* self = dtp_node_new(p); 
     // self->kind = NK_TYPE; 
     IGNORE_VALUE depth;
@@ -699,11 +627,11 @@ bool dtp_function_return_type(DtParser* p, int depth) {
     dtp_expect_kind(p,(type = dtp_step(p)),TOKEN_KIND_WORD, "Expected return type");
     // self->identifier = type;
     
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_block(DtParser* p, int depth, bool step_at_last) {
-    dt_trace("block:", depth, );
+DtParseResult dtp_block(DtParser* p, int depth, bool step_at_last) {
+    dtp_trace_recursion(p, "block:", depth, );
     
     // DtNode* self = dtp_node_new(p); 
     // DtNode* statement;
@@ -724,11 +652,11 @@ bool dtp_block(DtParser* p, int depth, bool step_at_last) {
     Token last;
     if (step_at_last) last = dtp_step(p); else last = dtp_ahead(p);
     dtp_expect_sym(p, last, '}', "Expected '}' ");
-    return true;
+    return dtp_ok();
 }
 
 
-bool dtp_symbol_declaration(DtParser* p, int depth) {
+DtParseResult dtp_symbol_declaration(DtParser* p, int depth) {
     IGNORE_VALUE depth;
 
     // Token type = {0};
@@ -756,10 +684,10 @@ bool dtp_symbol_declaration(DtParser* p, int depth) {
 
     // TODO: set identifer 
     //self->value.identifier 
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_function_declaration(DtParser* p, int depth) {
+DtParseResult dtp_function_declaration(DtParser* p, int depth) {
     // DtNode* self = dtp_node_new(p);
     // DtNode* args = dtp_node_new(p);
     //Token  name = {0};
@@ -773,7 +701,7 @@ bool dtp_function_declaration(DtParser* p, int depth) {
     // self->identifier = p->current_token;
 
 
-    dt_trace("function:", depth, "%s", Token_text_cstr(p->current_token));
+    dtp_trace_recursion(p, "function:", depth, "%s", Token_text_cstr(p->current_token));
     sb_appendf(sb, "fn %.*s ", 
             (int)p->current_token.data.as_word.length,
             p->current_token.data.as_word.data
@@ -804,8 +732,7 @@ bool dtp_function_declaration(DtParser* p, int depth) {
             break;
 
         default: 
-            dtp_error_token(arg_token, "failed to parse function arguments, expected <ident>, ..."); 
-            return NULL;
+            return dtp_error();
     }
 
     dtp_expect_sym(p, dtp_step(p), ')', "Expected ')' at the end of the function arguments.");
@@ -830,17 +757,23 @@ bool dtp_function_declaration(DtParser* p, int depth) {
     //}
     // dtp_node_append(self, block);
     sb_append(sb, "endfn\n");
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_function_call(DtParser* p, int depth) {
+DtParseResult dtp_function_call(DtParser* p, int depth) {
     // DtNode* self = dtp_node_new(p);
     //DtNode* node = {0};
     // self->kind = NK_FUNCTION_CALL;
     // self->identifier = p->current_token;
     // self->source_location = p->current_token;
     
+    StringBuilder* sb = &(p->output);
+    Token name = {0};
+
     dtp_expect_kind (p,p->current_token, TOKEN_KIND_WORD, "Expected word");
+    name = p->current_token;
+    dtp_trace_recursion(p, "fncall ", depth, "'%s'", Token_text_cstr(name));
+    
     dtp_expect_sym  (p,dtp_step(p), '(', "Expected '('");
 
  dtp_array_next:;
@@ -851,15 +784,17 @@ bool dtp_function_call(DtParser* p, int depth) {
         ; // finish cycling
     else {
         // dtp_node_append(self, dtp_expression(p, depth+1));
-        dtp_expression(p, depth+1);
+        dtp_ok_or_return(dtp_expression(p, depth+1));
         goto dtp_array_next;
     }
 
+    sb_appendf(sb, "\t call %.*s\n", tkn_fmt(tkn_as_slice(name)));
+
     dtp_expect_sym(p, dtp_step(p), ')', "Expected ')' at the end of the array.");
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_object(DtParser* p, int depth) {
+DtParseResult dtp_object(DtParser* p, int depth) {
     IGNORE_VALUE depth;
     // DtNode* self = dtp_node_new(p);
     // DtNode* node = 0;
@@ -898,19 +833,19 @@ try_again:
 
 end:
     dtp_expect_sym(p, dtp_step(p), '}', "Expected '}' for object closing");
-    return true;
+    return dtp_error();
 }
 
-DtNode* dtp_string(DtParser* p, int depth) {
-    IGNORE_VALUE depth;
-    DtNode* self = dtp_node_new(p);
-    //DtNode* node = {0};
-    Token value = dtp_step(p);
-    dtp_expect_kind(p, value, TOKEN_KIND_LITERALL_STRING, "Expected string literall");
-    
-    self->kind = NK_STRLIT;
-    return self;
-}
+// DtNode* dtp_string(DtParser* p, int depth) {
+//     IGNORE_VALUE depth;
+//     DtNode* self = dtp_node_new(p);
+//     //DtNode* node = {0};
+//     Token value = dtp_step(p);
+//     dtp_expect_kind(p, value, TOKEN_KIND_LITERALL_STRING, "Expected string literall");
+//    
+//     self->kind = NK_STRLIT;
+//     return self;
+// }
 
 bool dtp_is_numeric(Token t) {
     return t.kind == TOKEN_KIND_LITERALL_INTEGER 
@@ -930,7 +865,8 @@ bool dtp_is_expression(Token t) {
         || t.kind == TOKEN_KIND_LITERALL_FLOAT
         || t.kind == TOKEN_KIND_LITERALL_STRING
         || t.kind == TOKEN_KIND_WORD
-        || dtp_match_sym(t, '(');
+        || dtp_match_sym(t, '(')
+        || dtp_match_sym(t, '-');
 }
 
 bool dtp_is_add(Token t) {
@@ -958,23 +894,16 @@ bool dtp_is_unary(Token t) {
     return dtp_match_sym(t, '!') || dtp_match_sym(t, '-');
 }
 
-DtNode* dtp_branch(DtParser* p, DtNode* l, DtNode* r, DtNodeKind kind) {
-    DtNode* self = dtp_node_new(p);
-    dtp_node_append(self,l);
-    dtp_node_append(self,r);
-    if (self)
-        self->kind = kind;
-    return self;
-}
+// DtNode* dtp_branch(DtParser* p, DtNode* l, DtNode* r, DtNodeKind kind) {
+//     DtNode* self = dtp_node_new(p);
+//     dtp_node_append(self,l);
+//     dtp_node_append(self,r);
+//     if (self)
+//         self->kind = kind;
+//     return self;
+// }
 
-bool dtp_comparison  (DtParser*, int);
-bool dtp_equality    (DtParser*, int);
-bool dtp_factor      (DtParser*, int);
-bool dtp_term        (DtParser*, int);
-bool dtp_primary     (DtParser*, int);
-bool dtp_unary       (DtParser*, int);
-
-bool dtp_equality(DtParser* p, int depth) {
+DtParseResult dtp_equality(DtParser* p, int depth) {
     enum {
         OP_CMP_ONCE,
         OP_CMP_MANY,
@@ -986,7 +915,7 @@ bool dtp_equality(DtParser* p, int depth) {
     dtp_comparison(p, depth + 1);
 
     if (dtp_is_eql(dtp_ahead(p))) {
-        dt_trace("eq |",depth, );
+        dtp_trace_recursion(p, "eq |",depth, );
         
         if (dtp_match_str(dtp_step(p),"==")) 
             is_equality[OP_CMP_ONCE] = true;
@@ -1010,7 +939,7 @@ bool dtp_equality(DtParser* p, int depth) {
         // result->properties |= NKP_IS_EQALITY * is_equality[OP_CMP_ONCE];
         // return result;
     }
-    return true;
+    return dtp_ok();
 }
 
 /*
@@ -1031,7 +960,7 @@ DtNode* dtp_equality(DtParser* p, int depth) {
 }
 */
 
-bool dtp_comparison(DtParser* p, int depth) {
+DtParseResult dtp_comparison(DtParser* p, int depth) {
 
     enum {
         OP_CMP_ONCE,
@@ -1045,7 +974,7 @@ bool dtp_comparison(DtParser* p, int depth) {
     dtp_term(p, depth + 1);
 
     if (dtp_is_cmp(dtp_ahead(p))) {
-        dt_trace("compare |",depth, );
+        dtp_trace_recursion(p, "compare |",depth, );
 
         Token cmp = dtp_step(p);
         if (dtp_match_sym(cmp,'>')) 
@@ -1094,7 +1023,7 @@ bool dtp_comparison(DtParser* p, int depth) {
         // return result;
     }
 
-    return true;
+    return dtp_ok();
 }
 
 void sb_merge(StringBuilder *dest, StringBuilder *src) {
@@ -1103,7 +1032,7 @@ void sb_merge(StringBuilder *dest, StringBuilder *src) {
 
 
 // TODO: fix breaking on terminating term.
-bool dtp_term(DtParser* p, int depth) {
+DtParseResult dtp_term(DtParser* p, int depth) {
     // StringBuilder before = p->output;
     StringBuilder* sb = &p->output;
     // memset(after, 0, sizeof(*after));
@@ -1119,7 +1048,7 @@ bool dtp_term(DtParser* p, int depth) {
     dtp_factor(p, depth + 1);
 
     if (dtp_is_add(dtp_ahead(p))) {
-        dt_trace("term |",depth, );
+        dtp_trace_recursion(p, "term |",depth, );
 
         if (dtp_match_sym(dtp_step(p),'+')) 
             is_plus[OP_ADD_ONCE] = true;
@@ -1160,10 +1089,10 @@ bool dtp_term(DtParser* p, int depth) {
     }
     // p->output = before;
     // free(sb->items);
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_factor(DtParser* p, int depth) {
+DtParseResult dtp_factor(DtParser* p, int depth) {
 
     StringBuilder* sb = &p->output;
 
@@ -1179,7 +1108,7 @@ bool dtp_factor(DtParser* p, int depth) {
     dtp_unary(p, depth + 1);
 
     if (dtp_is_mul(dtp_ahead(p))) {
-        dt_trace("factor   |",depth, );
+        dtp_trace_recursion(p, "factor   |",depth, );
 
         if (dtp_match_sym(dtp_step(p),'*')) 
             is_mul[OP_MUL_ONCE] = true;
@@ -1214,27 +1143,29 @@ bool dtp_factor(DtParser* p, int depth) {
         // return result;
     }
 
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_unary(DtParser* p, int depth) {
-
-    DtNode* self = 0;
+DtParseResult dtp_unary(DtParser* p, int depth) {
+    // DtNode* self = 0;
+    StringBuilder* sb = &(p->output);
     if (dtp_is_unary(dtp_ahead(p))) {
-        dt_trace("unary",depth, );
+        dtp_trace_recursion(p, "unary",depth, );
         dtp_step(p); // skip unary
         dtp_unary(p, depth + 1);
+        sb_appendf(sb, "\tpush -1\n");
+        sb_appendf(sb, "\tmul\n");
         // self = dtp_unary(p, depth + 1);
         // self->properties |= NKP_HAS_UNARY;
     } else 
         // self = dtp_primary(p, depth + 1);
         dtp_primary(p, depth + 1);
-    return self;
+    return dtp_ok();
 }
 
 
 
-bool dtp_value(DtParser* p, int depth) {
+DtParseResult dtp_value(DtParser* p, int depth) {
 
     StringBuilder* sb = &p->output;
 
@@ -1270,14 +1201,15 @@ bool dtp_value(DtParser* p, int depth) {
                 // self->identifier = name;
                 break; 
             }
-
-            // self->kind = NK_IDENTIFIER;
-            // self->identifier = name; 
             
+            // if `word` `(` -> function
             if (dtp_match_sym(dtp_ahead(p), '(')) {
                 // self->kind = NK_FUNCTION_CALL;
-                dtp_function_call(p, depth + 1);
-                // return dtp_function_call(p, depth + 1);
+                dtp_ok_or_return(dtp_function_call(p, depth + 1));
+            } 
+            // else its variable
+            else {
+                sb_appendf(sb, "\tload %.*s\n", tkn_fmt(tkn_as_slice(name))); 
             }
             break;
 
@@ -1285,17 +1217,17 @@ bool dtp_value(DtParser* p, int depth) {
             assert(0 && "Expected int, float or name indent (variable or function)");
     }
 
-    dt_trace("value:", depth, "%s", Token_text_cstr(name));
-    return true;
+    dtp_trace_recursion(p, "value:", depth, "%s", Token_text_cstr(name));
+    return dtp_ok();
 }
 
 
 // TODO: implement negative numbers
-bool dtp_primary(DtParser* p, int depth) {
+DtParseResult dtp_primary(DtParser* p, int depth) {
     // DtNode *self = 0;// *r, *rr;
 
     if (dtp_match_sym(dtp_ahead(p), '(')) {
-        dt_trace("primary", depth, );
+        dtp_trace_recursion(p, "primary", depth, );
         dtp_expect_sym(p, dtp_step(p), '(', "Expected '('");
         
         dtp_equality(p, depth + 1);
@@ -1309,7 +1241,7 @@ bool dtp_primary(DtParser* p, int depth) {
 #endif 
 
         dtp_expect_sym(p, dtp_step(p), ')', "Expected ')'");
-        return true;
+        return dtp_ok();
     } else if (dtp_is_value(dtp_ahead(p))) {
         return dtp_value(p, depth + 1);
     } else 
@@ -1318,12 +1250,12 @@ bool dtp_primary(DtParser* p, int depth) {
         printf("edging at dtp_prime(DtParser*, int) with: %s", 
                 Token_temp_cstr(p->current_token)
                 );//assert(0 && "Failed to parse prime");
-    return true;
+    return dtp_ok();
 }
 
 
-bool dtp_expression(DtParser* p, int depth) {
-    dt_trace("expr",depth, );
+DtParseResult dtp_expression(DtParser* p, int depth) {
+    dtp_trace_recursion(p, "expr",depth, );
     IGNORE_VALUE depth;
     // DtNode* self = dtp_node_new(p);
     //DtNode* node = {0};
@@ -1335,14 +1267,14 @@ bool dtp_expression(DtParser* p, int depth) {
     
     // self->kind = NK_EXPRESSION;
     // return dtp_node_append(self, node);
-    return true;
+    return dtp_ok();
 }
 
 
 
-bool dtp_array(DtParser *p, int depth) {
+DtParseResult dtp_array(DtParser *p, int depth) {
 
-    dt_trace("array",depth, );
+    dtp_trace_recursion(p, "array",depth, );
     // DtNode* self = dtp_node_new(p);
     // DtNode* node = {0};
 
@@ -1360,7 +1292,7 @@ dtp_array_next:;
 
         case TOKEN_KIND_LITERALL_STRING:
             // dtp_node_append(self, (node = dtp_string(p, depth + 1)));
-            dtp_string(p, depth + 1);
+            // dtp_string(p, depth + 1);
             goto dtp_array_next;
             break;
 
@@ -1378,11 +1310,13 @@ dtp_array_next:;
 
     // self->kind = NK_ARRAY;
 
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_variable(DtParser* p, int depth) {
+
+DtParseResult dtp_variable(DtParser* p, int depth) {
     // DtNode* self = 0;//dtp_node_new(p);
+    StringBuilder* sb = &(p->output);
     Token name = {0};
     //Token lhs = {0};
 
@@ -1391,10 +1325,12 @@ bool dtp_variable(DtParser* p, int depth) {
     dtp_expect_sym  (p, dtp_step(p), '=', "Expected '='");
     
 
-    dt_trace("variable",depth, "%s", Token_text_cstr(name));
+    dtp_trace_recursion(p, "variable",depth, "%s", Token_text_cstr(name));
 
     // self = dtp_rvalue(p, depth++);
-    dtp_rvalue(p, depth++);
+    dtp_ok_or_return(dtp_rvalue(p, depth++));
+    sb_appendf(sb, "\tstore %.*s\n", tkn_fmt(tkn_as_slice(name)));
+
     // if (!self) {
     //     dtp_error_token( dtp_step(p), "Failed to parse variable");
     //     return NULL;
@@ -1402,10 +1338,10 @@ bool dtp_variable(DtParser* p, int depth) {
     // self->kind = NK_VARIABLE;
     // self->identifier = name;
 
-    return true;
+    return dtp_ok();
 }
 
-bool dtp_rvalue(DtParser* p, int depth) {
+DtParseResult dtp_rvalue(DtParser* p, int depth) {
     // DtNode* self = dtp_node_new(p);
     // DtNode* node = {0};
     Token lhs = {0};
@@ -1440,8 +1376,7 @@ bool dtp_rvalue(DtParser* p, int depth) {
                     // dtp_node_append(self,(node = dtp_expression(p, depth + 1))); 
                     dtp_expression(p, depth + 1); 
                 } else {
-                    dtp_error_token(lhs, "expected value of any kind");
-                    return false;
+                    return dtp_error();
                 }
             } break;
 
@@ -1449,13 +1384,13 @@ bool dtp_rvalue(DtParser* p, int depth) {
     }
 
 
-    return true;
+    return dtp_ok();
 }
 
 
 bool dtp_parse(DtParser* p, int depth) {
 
-    dt_trace("ROOT:", depth, );
+    dtp_trace_recursion(p, "ROOT:", depth, );
 
     // DtNode* self = dtp_node_new(p);
     //DtNode* node = {0};
@@ -1532,45 +1467,45 @@ DtNode* dtp_node_index(DtNode* node, size_t i) {
     return 0;
 }
 
-DtNode* dtp_node_get(DtNode* node, DtNodeKind kind) {
-    if (!node) return NULL;
-    if (node && node->kind == kind) return node;
-    DtNode* next = node->children;
-    DtNode* result = 0;
-    while(next) {
-        if (next->kind == kind) return next;
-        result = dtp_node_get(next->children, kind);
-        if(result) return result;
-        next = next->next;
-    }
-    return NULL;
-}
+// DtNode* dtp_node_get(DtNode* node, DtNodeKind kind) {
+//     if (!node) return NULL;
+//     if (node && node->kind == kind) return node;
+//     DtNode* next = node->children;
+//     DtNode* result = 0;
+//     while(next) {
+//         if (next->kind == kind) return next;
+//         result = dtp_node_get(next->children, kind);
+//         if(result) return result;
+//         next = next->next;
+//     }
+//     return NULL;
+// }
 
 // TODO: print literalls
 // TODO: print expressions in parenthesis as if they where 
 //          written by a person
 //              E.G: 1 + ((10 / 2) * 3 )
 //
-void dtp_print_ast(DtNode* node, int depth, FILE* output_redir) {
-    if (!node) return;
-    DtNode* list = node;
-    while(list) {
-        fprintf(output_redir, 
-                "%*s%s: "
-                "%c%s\t",
-                
-                depth*4, "", 
-                DT_NODE_KIND_STR[list->kind],
-
-                (list->properties & NKP_HAS_UNARY) ? '-' : ' ',
-                Token_text_cstr(list->identifier)
-        );
-
-        //fprintf(output_redir, " -> %i", list->value.type);
-
-        fprintf(output_redir, "\n");
-        
-        dtp_print_ast(list->children, depth+1, output_redir);
-        list = list->next;
-    }    
-}
+// void dtp_print_ast(DtNode* node, int depth, FILE* output_redir) {
+//     if (!node) return;
+//     DtNode* list = node;
+//     while(list) {
+//         fprintf(output_redir, 
+//                 "%*s%s: "
+//                 "%c%s\t",
+//                
+//                 depth*4, "", 
+//                 DT_NODE_KIND_STR[list->kind],
+//
+//                 (list->properties & NKP_HAS_UNARY) ? '-' : ' ',
+//                 Token_text_cstr(list->identifier)
+//         );
+//
+//         //fprintf(output_redir, " -> %i", list->value.type);
+//
+//         fprintf(output_redir, "\n");
+//        
+//         dtp_print_ast(list->children, depth+1, output_redir);
+//         list = list->next;
+//     }    
+// }

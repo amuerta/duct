@@ -1,5 +1,5 @@
 build: 
-	clang -o main ./src/compiler/dt.c\
+	clang -o main ./src/dt.c\
 		-ggdb\
 		-std=c99\
 		# -pedantic
