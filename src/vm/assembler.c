@@ -71,11 +71,10 @@ const char* dtvm_decompile_instruction(Instruction i) {
         case DTI_PUSH:
              sb_appendf(&sb, "push"); 
              switch(i.as.push.object.type) {
-                 case OT_INT:   
-                 case OT_BYTE:   
-                                sb_appendf(&sb, " %i", i.as.push.object.as.i); break;
-                 case OT_FLOAT: sb_appendf(&sb, " %f", i.as.push.object.as.f); break;
-                 case OT_BOOL:  sb_appendf(&sb, " %s", i.as.push.object.as.B ? "true" : "false"); break;
+                 case OT_INT:   sb_appendf(&sb, " i.%i", i.as.push.object.as.i); break;
+                 case OT_BYTE:  sb_appendf(&sb, " b.%i", i.as.push.object.as.i); break;
+                 case OT_FLOAT: sb_appendf(&sb, " f.%f", i.as.push.object.as.f); break;
+                 case OT_BOOL:  sb_appendf(&sb, " B.%s", i.as.push.object.as.B ? "true" : "false"); break;
              }
              break;
 
@@ -99,41 +98,59 @@ const char* dtvm_decompile_instruction(Instruction i) {
              sb_appendf(&sb, "jmp %i", i.as.jmp.jumpto);
              break;
 
+             // operate on the stack values like add/sub/mul/div
         case DTI_EQ: 
-             sb_appendf(&sb, "eq ");
+             sb_appendf(&sb, "eq "); 
+             break;
+        case DTI_LT: 
+             sb_appendf(&sb, "lt "); 
+             break;
+        case DTI_GT: 
+             sb_appendf(&sb, "gt "); 
+             break;
+        case DTI_GTE: 
+             sb_appendf(&sb, "gt "); 
+             break;
+        case DTI_LTE: 
+             sb_appendf(&sb, "gt "); 
+             break;
+
+             // work on literally values, have `l` perfix
+        case DTI_LEQ: 
+             sb_appendf(&sb, "leq ");
              goto cmp_body;
-        case DTI_LT:
-             sb_appendf(&sb, "lt ");
+        case DTI_LLT:
+             sb_appendf(&sb, "llt ");
              goto cmp_body;
-        case DTI_GT:
-             sb_appendf(&sb, "gt ");
+        case DTI_LGT:
+             sb_appendf(&sb, "lgt ");
              goto cmp_body;
-        case DTI_GTE:
-             sb_appendf(&sb, "gte ");
+        case DTI_LGTE:
+             sb_appendf(&sb, "lgte ");
              goto cmp_body;
-        case DTI_LTE:
+        case DTI_LLTE:
              {
-                 sb_appendf(&sb, "lte ");
-cmp_body:
-                 switch(i.as.eq.object.type) {
+                 sb_appendf(&sb, "llte ");
+        cmp_body:   ;
+                 switch(i.as.leq.object.type) {
                      case OT_BOOL:
                          sb_appendf(&sb, "%s", 
-                                 i.as.eq.object.as.B ? "true" : "false"
+                                 i.as.leq.object.as.B ? "true" : "false"
                                  ); break;
                      case OT_CHAR:
-                         sb_appendf(&sb, "c.%c", i.as.eq.object.as.b); 
+                         sb_appendf(&sb, "c.%c", i.as.leq.object.as.b); 
                          break;
 
                      case OT_BYTE:
-                         sb_appendf(&sb, "b.%i", i.as.eq.object.as.i); 
+                         sb_appendf(&sb, "b.%i", i.as.leq.object.as.i); 
                          break;
 
                      case OT_INT:
-                         sb_appendf(&sb, "i.%i", i.as.eq.object.as.i); 
+                         sb_appendf(&sb, "i.%i", i.as.leq.object.as.i); 
                          break;
 
                      case OT_FLOAT:
-                         sb_appendf(&sb, "f.%f", i.as.eq.object.as.f); 
+                         sb_appendf(&sb, "f.%f", i.as.leq.object.as.f); 
                          break;
 
                      default:
@@ -238,32 +255,33 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
         inst.as.store.ident = operand;
     }
 
+
     // TODO: make this less ugly?
     else if (
-            match(inst_str, "eq")   || match(inst_str, "cmp")   ||
-            match(inst_str, "lt")   ||
-            match(inst_str, "gt")   ||
-            match(inst_str, "lte")  ||
-            match(inst_str, "gte") 
+            match(inst_str, "leq")   || match(inst_str, "lcmp")   ||
+            match(inst_str, "llt")   ||
+            match(inst_str, "lgt")   ||
+            match(inst_str, "llte")  ||
+            match(inst_str, "lgte") 
             ) {
 
-        if(match(inst_str, "eq") || match(inst_str, "cmp"))   
-            inst.kind = DTI_EQ;
-        if(match(inst_str, "lt"))   inst.kind = DTI_LT;
-        if(match(inst_str, "gt"))   inst.kind = DTI_GT;
-        if(match(inst_str, "lte"))  inst.kind = DTI_LTE;
-        if(match(inst_str, "gte"))  inst.kind = DTI_GTE;
+        if(match(inst_str, "leq") || match(inst_str, "lcmp"))   
+            inst.kind = DTI_LEQ;
+        if(match(inst_str, "llt"))   inst.kind = DTI_LLT;
+        if(match(inst_str, "lgt"))   inst.kind = DTI_LGT;
+        if(match(inst_str, "llte"))  inst.kind = DTI_LLTE;
+        if(match(inst_str, "lgte"))  inst.kind = DTI_LGTE;
         operand = split_next(&l);
         int n = 0;
 
         if (str_is_integer(operand)) {
             n = string_to_integer(operand);
-            if     (match(inst_str, "eq") || match(inst_str, "cmp"))   
-                                             inst.as.eq .object = object_int(n);
-            else if(match(inst_str, "lt"))   inst.as.lt .object = object_int(n);
-            else if(match(inst_str, "gt"))   inst.as.gt .object = object_int(n);
-            else if(match(inst_str, "lte"))  inst.as.lte.object = object_int(n);
-            else if(match(inst_str, "gte"))  inst.as.gte.object = object_int(n);
+            if     (match(inst_str, "leq") || match(inst_str, "lcmp"))   
+                                              inst.as.leq .object = object_int(n);
+            else if(match(inst_str, "llt"))   inst.as.llt .object = object_int(n);
+            else if(match(inst_str, "lgt"))   inst.as.lgt .object = object_int(n);
+            else if(match(inst_str, "llte"))  inst.as.llte.object = object_int(n);
+            else if(match(inst_str, "lgte"))  inst.as.lgte.object = object_int(n);
             else *status = DTSTAT_INVALID_OPERAND_TYPE;
         }
     }
@@ -313,6 +331,12 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
     else if (match(inst_str, "or" ))     { inst.kind = DTI_OR;      }
     else if (match(inst_str, "not"))     { inst.kind = DTI_NOT;     }
 
+
+    else if (match(inst_str, "eq" ))     { inst.kind = DTI_EQ;      }
+    else if (match(inst_str, "lt" ))     { inst.kind = DTI_LT;      }
+    else if (match(inst_str, "gt" ))     { inst.kind = DTI_GT;      }
+    else if (match(inst_str, "gte"))     { inst.kind = DTI_GTE;     }
+    else if (match(inst_str, "lte"))     { inst.kind = DTI_LTE;     }
 
     // If not label or function set value to instruction.
     if(!(inst.kind == DTI_NULL && (*status) == DTSTAT_OK))
@@ -385,6 +409,7 @@ String dtvm_bytecode_compile(
                             str_fmt(line), 
                             "Labels with 0th index are not allowed."
                     );
+                    assert(0);
                     break;
                 }
                 else if(str_is_empty(result.as.label.name)) {
@@ -394,6 +419,8 @@ String dtvm_bytecode_compile(
                             str_fmt(line), 
                             "Label cannot have empty name."
                     );
+
+                    assert(0);
                     break;
                 }
 
@@ -408,6 +435,7 @@ String dtvm_bytecode_compile(
                 dta_trace(trace_file, 
                         "Failed at line when parsing label: #%i:'%.*s', error: %s\n", 
                         i, str_fmt(line), dtvm_get_error(stat));
+                assert(0);
                 break;
             }
         }
@@ -424,6 +452,8 @@ String dtvm_bytecode_compile(
                 fprintf(stderr, 
                         "Failed at line: #%i:'%.*s', error: %s\n", 
                         i, str_fmt(line), dtvm_get_error(stat));
+
+                assert(0);
                 break;
             }
         }

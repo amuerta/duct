@@ -83,7 +83,31 @@ bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* sou
 #define sb_fmt(sb) (int)sb.count, sb.items
 #define str_multiline(...) #__VA_ARGS__
 
-void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
+void dt_run(DtInterpreter* interpreter, const char* entry_point) {
+    Dtvm* vm = &(interpreter->vm);
+    if(!interpreter->vm.writef) {
+        interpreter->vm.writef     = interpreter->outputf; 
+    }
+    dtvm_call(vm, string(entry_point), NULL, 0);
+    dtvm_print_stack(vm);
+}
+
+void dt_reset(DtInterpreter* interpreter) {
+    FILE *tracef = interpreter->tracef, 
+         *outputf = interpreter->outputf,
+         *errorf = interpreter->errorf;
+    dtvm_free(&interpreter->vm);
+    interpreter->tracef = tracef;
+    interpreter->outputf = outputf;
+    interpreter->errorf = errorf;
+}
+
+void dt_run_reset(DtInterpreter* interpreter, const char* entry_point) {
+    dt_run(interpreter, entry_point);
+    dt_reset(interpreter);
+}
+
+void dt_compile(DtInterpreter* interpreter, const char* source) {
     DtInterpreter*  itrp    = interpreter;
     Dtvm*           vm      = &(itrp->vm);
     dt_compile_assembly_from_string(interpreter, source, strlen(source));
@@ -92,6 +116,10 @@ void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
         itrp->parser.output.count
     };
     dtvm_compile_from_asm(vm, assembly, interpreter->tracef);
+}
+
+void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
+    dt_compile(interpreter, source);
 
     // for(size_t i = 0; i<vm->functions.count; i++) {
     //     printf("vm.functions[%lu] = '%.*s'\n", i, str_fmt(vm->functions.items[i].id));
@@ -100,15 +128,9 @@ void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
     //         printf("\t> %lu kind: %i\n", in, fn.code.items[in].kind);
     //     }
     // }
-
-    // printf("\n\nCALLING 'main': \n");
-
     // dtvm_add_function(&vm, fn1);
     // dtvm_add_function(&vm, fn2);
-    dtvm_call(vm, string("main"), NULL, 0);
-
-    // dtvm_print_stack(vm);
-    dtvm_free(&itrp->vm);
+    dt_run_reset(interpreter, "main");
 }
 
 void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
@@ -128,6 +150,14 @@ void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
 // LATER:
 // - constant folding
 
+// TODO: 
+// - dtp_progragate for applying generated_instructions info and possible parse errors.
+// - rename dtp_ok_or_return to dtp_ok_or_abort
+// - proper Token_to_string() function that isn't crappy
+// - reduce boiler plate related to incrementing instructions emmited
+// - sane reservation of space for instruction when compiling assembly.
+// - make example interpreter emmit assembly of the code.
+
 int main(void) {
     // const char* file = "./examples/parsing_00.dt";
     // char* txt = dt_load_file(file);
@@ -136,18 +166,72 @@ int main(void) {
     //     return 1;
     // }
 
-    const char* source = str_multiline(
-        add(a,b) { return a + b }
-        main() {
-            a = ------------60
-            b = 7
-            write(add(a,b))
-        }
-    );
     DtInterpreter interp = {
         .tracef  = stderr,
-        .outputf = stdout
+        .outputf = stdout,
     };
+
+    // const char* assembly_if_source = 
+    //         "fn main\n"
+    //         // $ - nameless variable
+    //         "push 1     \n" 
+    //        
+    //         // if $ == 10
+    //         "cmp 1      \n"
+    //         "ijif 5     \n"
+    //         "pop        \n"
+    //         "pop        \n"
+    //         "push 10   \n"
+    //         "wrt        \n"
+    //         "jmp end     \n" // end
+    //        
+    //         // else if $ == 1
+    //         "pop        \n"
+    //         "cmp 2      \n"
+    //         "ijif 5     \n"
+    //         "pop        \n"
+    //         "pop        \n"
+    //         "push 20  \n"
+    //         "wrt        \n"
+    //         "jmp end    \n" // end
+    //
+    //         // else if $ == 5
+    //         "pop        \n"
+    //         "cmp 3      \n"
+    //         "ijif 5     \n"
+    //         "pop        \n"
+    //         "pop        \n"
+    //         "push 30    \n"
+    //         "wrt        \n"
+    //         "jmp end     \n" // end
+    //
+    //         // clean up if none of the branches match
+    //         "pop\n"
+    //         "pop\n"
+    //         "nop\n"
+    //
+    //         "push 69\n"
+    //         "wrt\n"
+    //         // other code
+    //         "nop\n"
+    //         "@end\n"
+    //         "endfn\n";
+    // dt_append_assembly(&interp,  assembly_if_source);
+    // /*
+    // add(a,b) { return a + b }
+        const char* source = str_multiline(
+                main() {
+                    a = 1
+                    b = 21
+                    if b < a { 
+                        write(a+b)
+                    } else {
+                        write(69)
+                    }
+                }
+        );
+    // */
+
     dt_append_assembly(&interp, 
             "fn write v\n"
                 "load v\n"
@@ -155,7 +239,10 @@ int main(void) {
                 "pop\n"
             "endfn\n"
     );
+    // dt_compile(&interp, source);
     dt_compile_run_reset(&interp, source);
+    // dt_run_reset(&interp, "main");
+    // dt_reset(&interp);
 
     // TODO: check for empty file
     // free(txt);

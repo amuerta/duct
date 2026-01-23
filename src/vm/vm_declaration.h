@@ -77,11 +77,20 @@ enum {
     DTI_OR,
     DTI_NOT,
 
+
     DTI_EQ,     // ==
     DTI_LT,     // < 
     DTI_GT,     // >
     DTI_LTE,    // <=
     DTI_GTE,    // >=
+         
+    // WORK ON LITERALS:
+    DTI_LEQ,     // ==
+    DTI_LLT,     // < 
+    DTI_LGT,     // >
+    DTI_LLTE,    // <=
+    DTI_LGTE,    // >=
+    
     DTI_IJIF,   // INCREMENTAL JUMP IF
     DTI_JMP,    
     
@@ -134,13 +143,13 @@ typedef struct Object {
     String   id;
     int     type;
     union {
-        bool        B;
-        char        b;
-        int         i;
-        float       f;
-        Result      r;
-        String      s; // read only string
-        EObjectType T; // object type
+        bool            B;
+        unsigned char   b;
+        int             i;
+        float           f;
+        Result          r;
+        String          s; // read only string
+        EObjectType     T; // object type
     } as;
 } Object;
 
@@ -165,7 +174,7 @@ typedef struct Instruction {
 
         struct {
             Object object;
-        } push, eq, gt, lt, gte, lte;
+        } push, leq, lgt, llt, lgte, llte;
 
         struct {
             size_t jumpto;

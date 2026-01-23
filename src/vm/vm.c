@@ -182,7 +182,24 @@ int object_resolve_types(Object* left, Object* right) {
         r = right;
     }
 
+    // TODO: make sane type resolution, improve it.
     switch(l->type) {
+
+        case OT_BOOL:
+            switch(r->type) {
+                case OT_FLOAT: 
+                    f = r->as.f;
+                    r->as.B = f;
+                    r->type = OT_BOOL;
+                    break;
+                case OT_INT:
+                case OT_BYTE:
+                case OT_BOOL:
+                    i = r->as.i;
+                    r->as.B = i;
+                    r->type = OT_BOOL;
+                    break;
+            }
 
         // resolve int with other types
         // (float -> int), (bool -> int)
@@ -207,8 +224,8 @@ int object_resolve_types(Object* left, Object* right) {
     return OT_NULL;
 }
 
+// CODEGEN
 #define object_op(T, OP)  (l.as.T OP r.as.T)
-
 // UN-Neccessary boiler plate shall be exterminated
 #define object_binop_generate(name, op) \
     Object object_##name(Object l, Object r) {\
@@ -217,10 +234,10 @@ int object_resolve_types(Object* left, Object* right) {
             case OT_BOOL:\
             case OT_BYTE:\
             case OT_INT: \
-                         o.as.i = object_op(i,  op); break;\
+                         o.as.i = object_op(i, op); break;\
             case OT_FLOAT:\
-                          o.as.f = object_op(f, op); break;\
-            default: UNREACHABLE("Can't add types");\
+                         o.as.f = object_op(f, op); break;\
+            default: UNREACHABLE("Can't "#name" types");\
         }\
         return o;\
     }\
@@ -231,21 +248,23 @@ object_binop_generate(mul, *  );
 object_binop_generate(div, /  );
 object_binop_generate(and, && );
 object_binop_generate(or,  || );
-object_binop_generate(gt,  > );
-object_binop_generate(lt,  < );
+object_binop_generate(gt,  >  );
+object_binop_generate(lt,  <  );
 object_binop_generate(gte, >= );
 object_binop_generate(lte, <= );
 
+
+// NOTE: comparison can be quirky
 Object object_eq(Object l, Object r) {
     Object o = {0};
     switch(o.type = object_resolve_types(&l, &r)) {
             case OT_BOOL:
             case OT_BYTE:
             case OT_INT: 
-                         return object_bool(object_op(B, == )); 
+                         return object_bool(object_op(i, == )); 
                          break;
             case OT_FLOAT:
-                         return object_bool(object_op(B, == )); 
+                         return object_bool(object_op(f, == )); 
                          break;
                          
             default: UNREACHABLE("Can't add types");\
@@ -266,8 +285,9 @@ void object_write(FILE* f, Object o) {
             fprintf(f, "%c", o.as.b);
             break;
         case OT_BYTE: 
+            fprintf(f, "%u", o.as.b);
         case OT_INT: 
-            fprintf(f, "%i", o.as.b);
+            fprintf(f, "%i", o.as.i);
             break;
         case OT_FLOAT: 
             fprintf(f, "%f", o.as.f);
@@ -338,6 +358,7 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
 
         case DTI_IJIF:
             {
+                // __asm__("int3");
                 assert(inst.as.ijif.jumpto != -1 && "Uninitilized jump address from a tag.");
                 Object obj = dtvm_peek(vm);
                 if(!obj.as.B)  // jump over to next branch check
@@ -375,17 +396,17 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
 
 
         // lazyy
-        #define DTI_CMP(proc, instruction_name) { \
+        #define DTI_LITERAL_COMPARE(proc, instruction_name) { \
                 Object l = dtvm_peek(vm);\
                 Object r = inst.as.instruction_name.object; \
                 dtvm_push(vm, proc(l,r)); \
         }
-        case DTI_EQ:  DTI_CMP(object_eq,  eq ) break;
+        case DTI_LEQ:  DTI_LITERAL_COMPARE(object_eq,  leq ) break;
         
-        case DTI_LT:  DTI_CMP(object_lt,  lt ) break;
-        case DTI_GT:  DTI_CMP(object_gt,  gt ) break;
-        case DTI_LTE: DTI_CMP(object_lte, lte) break;
-        case DTI_GTE: DTI_CMP(object_gte, gte) break;
+        case DTI_LLT:  DTI_LITERAL_COMPARE(object_lt,  llt ) break;
+        case DTI_LGT:  DTI_LITERAL_COMPARE(object_gt,  lgt ) break;
+        case DTI_LLTE: DTI_LITERAL_COMPARE(object_lte, llte) break;
+        case DTI_LGTE: DTI_LITERAL_COMPARE(object_gte, lgte) break;
 
 
         // lazyy
@@ -393,6 +414,18 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
                 Object l = dtvm_pop(vm); Object r = dtvm_pop(vm); \
                 dtvm_push(vm, proc(r,l)); \
         }
+
+        #define DTI_BINCMP(proc) { \
+                Object l = dtvm_pop(vm); Object r = dtvm_pop(vm); \
+                dtvm_push(vm, object_bool(proc(r,l).as.i)); \
+        }
+
+        case DTI_EQ:  DTI_BINCMP(object_eq ) break;
+        case DTI_LT:  DTI_BINCMP(object_lt ) break;
+        case DTI_GT:  DTI_BINCMP(object_gt ) break;
+        case DTI_LTE: DTI_BINCMP(object_lte) break;
+        case DTI_GTE: DTI_BINCMP(object_gte) break;
+
 
         case DTI_ADD: DTI_BINOP(object_add) break;
         case DTI_SUB: DTI_BINOP(object_sub) break;

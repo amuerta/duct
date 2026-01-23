@@ -66,7 +66,7 @@ void test_assembler_0() {
             "pop        \n"
             "push 420   \n"
             "wrt        \n"
-            "jmp 27     \n" // end
+            "jmp end     \n" // end
             
             // else if $ == 1
             "pop        \n"
@@ -76,7 +76,7 @@ void test_assembler_0() {
             "pop        \n"
             "push 1337  \n"
             "wrt        \n"
-            "jmp 27     \n" // end
+            "jmp end     \n" // end
 
             // else if $ == 5
             "pop        \n"
@@ -86,9 +86,10 @@ void test_assembler_0() {
             "pop        \n"
             "push 69    \n"
             "wrt        \n"
-            "jmp 27     \n" // end
+            "jmp end     \n" // end
 
             // clean up if none of the branches match
+            "@end"
             "pop\n"
             "pop\n"
             "nop\n"
