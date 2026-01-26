@@ -1,8 +1,8 @@
-#include "vm_declaration.h"
+#include "declarations.h"
 
-#define dta_trace(tracef, ...) if(tracef) {\
-    fprintf(tracef, __VA_ARGS__);\
-}
+#ifndef __DTVM_ASSEMBLER_H
+#define __DTVM_ASSEMBLER_H
+
 
 void dtvm_instructions_free(Instructions* code) {
     if(code->items) free(code->items);
@@ -642,3 +642,6 @@ void dtvm_function_free(Function* fn) {
     free(fn->memory);
     memset(fn, 0, sizeof(*fn));
 }
+
+
+#endif //__DTVM_ASSEMBLER_H

@@ -1,4 +1,4 @@
-#include "vm_declaration.h"
+#include "declarations.h"
 
 bool string_is_identifier(String s) {
     bool istext = true;

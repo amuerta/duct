@@ -1,112 +1,5 @@
 #include <errno.h>
-#include "dtc.h"
-#include "tokenizer.c"
-
-//
-// PARSER
-//
-
-#define PARSER_TOKEN_BUFFER_SIZE    8
-#define PARSER_LOOK_AHEAD_COUNT     4
-
-typedef enum {
-    TI_NULL,
-    TI_RANGE,
-    TI_DOT,
-    TI_COMMA,
-    TI_PAREN_O,
-    TI_PAREN_C,
-    TI_SBRACK_O,
-    TI_SBRACK_C,
-    TI_CURLY_O,
-    TI_CURLY_C,
-    TI_COLON,
-    TI_SEMICOLON,
-    TI_QMARK,
-    TI_EMARK,
-    TI_MINUS,
-    TI_PLUS,
-    TI_MUL,
-    TI_DIV,
-    TI_EQUAL,
-    TI_COMPARISON_EQUAL,
-    TI_COMPARISON_NOT_EQUAL,
-    TI_COMPARISON_GREATER,
-    TI_COMPARISON_LESS,
-    TI_COMPARISON_GREATER_EQUAL,
-    TI_COMPARISON_LESS_EQUAL,
-} TokenId;
-
-typedef enum {
-    NKP_IS_ADD      = 1,
-    NKP_IS_MUL      = 2,
-    NKP_HAS_UNARY   = 4,
-    NKP_IS_EQALITY  = 8,
-    NKP_IS_CMP_EQ   = 16,
-    NKP_IS_CMP_GT   = 32,
-} DtNodeKindProperties;
-
-typedef char            byte;
-typedef unsigned char   ubyte;
-
-// TODO: make this slice one and only slice in this project
-// TL;DR: remove TknSlice struct
-typedef struct {
-    const char*   data; 
-    size_t  length;
-} Slice;
-
-typedef struct {
-    const char**    indent;
-    size_t          count;
-    size_t          capacity;
-} TempIndentsList;
-
-typedef struct {
-    byte    type;
-    byte    properties;
-    Slice   identifier;
-    union {
-        bool        as_bool;
-        byte        as_byte;
-        int         as_int;
-        float       as_float;
-        int         as_type;
-        Slice       as_slice;
-    } memory;
-} DtLiterall;
-
-// TODO?: use union to make DtNode reuseable for both interpreting and parsing
-// by orginizing them by mode of operation
-typedef struct DtNode {
-    Token           source_location;// for error checking
-
-    // DtNodeKind      kind;
-    int             properties; // is term add or subtract?
-    int             type;
-    Token           identifier;
-
-    struct DtNode*  next;
-    struct DtNode*  children;
-} DtNode;
-
-typedef struct {
-    StringBuilder   output;
-    FILE*           tracef; // same as in `DtInterpreter`
-    FILE*           errorf; // same as in `DtInterpreter`
-
-    size_t      current;
-    size_t      requested_tokens,
-                parsed_tokens;
-    // we buffer PTBS(size) of tokens to be able 
-    // to lookup tokens before and after the current one
-    Tokenizer   lexer;
-    Token       current_token;
-    Token       token_buffer
-                    [PARSER_TOKEN_BUFFER_SIZE];
-    
-    Arena           allocator;
-} DtParser;
+#include "declarations.h"
 
 
 // since i use my generic tokenizer here,
@@ -192,47 +85,14 @@ char* dt_load_file(const char* path) {
 // PARSER / LEXER / LEX / PAR
 //
 
-#ifdef PARSER_TRACE
-#define dtp_trace_recursion(p, name, depth, ...) if(p->tracef) {\
-        fprintf(p->tracef, "%*.s> %s", depth, "\t", name);\
-        fprintf(p->tracef, ""__VA_ARGS__);\
-        fprintf(p->tracef, "\n");\
+String token_to_string(Token t) {
+    assert(t.kind == TOKEN_KIND_WORD);
+    String s = {
+        t.data.as_word.data,
+        t.data.as_word.length
+    };
+    return s;
 }
-#else
-#define dtc_trace_recursion(name,depth, ...) /* __VA_ARGS__ */
-#endif
-
-typedef enum {
-    DT_PNKIND_ERROR,
-    DT_PNKIND_OK,
-    DT_PNKIND_VALUE,
-} DtParseNodeKind;
-
-typedef struct {
-    bool negative_sign;
-    bool foldable_constant;
-} DtParseValue;
-
-typedef struct {
-    DtParseNodeKind     kind;   
-    size_t              instructions_generated;
-    union {
-        DtParseValue    value;
-    } as;
-} DtParseResult;
-
-DtParseResult dtp_error(void) {
-    const DtParseResult r = {0}; return r;
-}
-
-bool dtp_is_ok(DtParseResult r) { return r.kind >= DT_PNKIND_OK; };
-
-DtParseResult dtp_ok(void) {
-    const DtParseResult r = {.kind = DT_PNKIND_OK }; return r;
-}
-
-#define dtp_ok_or_return(e)\
-    if (!dtp_is_ok(e)) return e; 
 
 void dtp_print_token_buffer(DtParser p) {
     printf("current: %lu\t", p.current);
@@ -503,12 +363,15 @@ DtNode* dtp_node_append(DtNode* father, DtNode* children) {
 }
 
 
+
+const int PARENT_IS_EXPR = 1;
+
 DtParseResult dtp_expression              (DtParser* p, int depth) ;
 DtParseResult dtp_variable                (DtParser* p, int depth) ;
 DtParseResult dtp_rvalue                  (DtParser* p, int depth) ;
 DtParseResult dtp_function_declaration    (DtParser* p, int depth) ;
+DtParseResult dtp_function_call           (DtParser* p, int depth, bool parent_is_expression) ;
 DtParseResult dtp_statement               (DtParser* p, int depth) ;
-DtParseResult dtp_function_call           (DtParser* p, int depth) ;
 DtParseResult dtp_if_statement            (DtParser* p, int depth) ;
 DtParseResult dtp_block                   (DtParser* p, int depth, bool step_at_last) ;
 
@@ -677,7 +540,7 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
             dtp_match_sym(dtp_aheadc(p,2),'(')              )
     {
         dtp_step(p);
-        dtp_ok_or_return(other_res = dtp_function_call(p, depth + 1));
+        dtp_ok_or_return(other_res = dtp_function_call(p, depth + 1, !PARENT_IS_EXPR));
         this_res.instructions_generated += other_res.instructions_generated;
         // return result;
     } 
@@ -778,9 +641,12 @@ DtParseResult dtp_function_declaration(DtParser* p, int depth) {
     StringBuilder* sb = &p->output;
     dtp_expect_kind (p, p->current_token, TOKEN_KIND_WORD, "Expected word");
     // self->identifier = p->current_token;
+    size_t argc = 0;
+    
+    Token  name = p->current_token;
+    String name_string = token_to_string(p->current_token);
 
-
-    dtp_trace_recursion(p, "function:", depth, "%s", Token_text_cstr(p->current_token));
+    dtp_trace_recursion(p, "function:", depth, "%s", token_text_cstr(p->current_token));
     sb_appendf(sb, "fn %.*s ", 
             (int)p->current_token.data.as_word.length,
             p->current_token.data.as_word.data
@@ -795,11 +661,8 @@ DtParseResult dtp_function_declaration(DtParser* p, int depth) {
     switch ((arg_token = dtp_ahead(p)).kind) {
  
         case TOKEN_KIND_WORD:
-            dtp_symbol_declaration(p, depth + 1);
-
-            // if (!n) dtp_abort(p, "Failed to parse function agrument");
-
-            // dtp_node_append(args, n);
+            dtp_ok_or_return(dtp_symbol_declaration(p, depth + 1));
+            argc++;
             goto dtp_array_next;
             break;
 
@@ -836,10 +699,21 @@ DtParseResult dtp_function_declaration(DtParser* p, int depth) {
     //}
     // dtp_node_append(self, block);
     sb_append(sb, "endfn\n");
+
+
+    DtParserFunctionSymbol fn_decl = {
+        .name = name_string,
+        .argc = argc,
+    };
+
+    // TODO: proper error logging.
+    if(!dtp_validate_function(&p->function_symbols, fn_decl)) 
+        assert(0 && "function was already used with different signature");
+
     return dtp_ok();
 }
 
-DtParseResult dtp_function_call(DtParser* p, int depth) {
+DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expression) {
     // DtNode* self = dtp_node_new(p);
     //DtNode* node = {0};
     // self->kind = NK_FUNCTION_CALL;
@@ -851,10 +725,11 @@ DtParseResult dtp_function_call(DtParser* p, int depth) {
 
     StringBuilder* sb = &(p->output);
     Token name = {0};
+    size_t argc = 0;
 
     dtp_expect_kind (p,p->current_token, TOKEN_KIND_WORD, "Expected word");
     name = p->current_token;
-    dtp_trace_recursion(p, "fncall ", depth, "'%s'", Token_text_cstr(name));
+    dtp_trace_recursion(p, "fncall ", depth, "'%s'", token_text_cstr(name));
     
     dtp_expect_sym  (p,dtp_step(p), '(', "Expected '('");
 
@@ -865,6 +740,7 @@ DtParseResult dtp_function_call(DtParser* p, int depth) {
     } else if (dtp_match_sym(dtp_ahead(p), ')'))
         ; // finish cycling
     else {
+        argc++;
         // dtp_node_append(self, dtp_expression(p, depth+1));
         dtp_ok_or_return(other_res = dtp_expression(p, depth+1));
         this_res.instructions_generated += other_res.instructions_generated;
@@ -874,6 +750,15 @@ DtParseResult dtp_function_call(DtParser* p, int depth) {
     
     this_res.instructions_generated++;
     sb_appendf(sb, "\t call %.*s\n", tkn_fmt(tkn_as_slice(name)));
+
+
+    // TODO: proper error logging.
+    DtParserFunctionSymbol fn_decl = {
+        .name = token_to_string(name),
+        .argc = argc,
+    };
+    if(!dtp_validate_function(&p->function_symbols, fn_decl)) 
+        assert(0 && "function was already defined with different signature");
 
     dtp_expect_sym(p, dtp_step(p), ')', "Expected ')' at the end of the array.");
     return this_res;
@@ -1374,7 +1259,7 @@ DtParseResult dtp_value(DtParser* p, int depth) {
             // if `word` `(` -> function
             if (dtp_match_sym(dtp_ahead(p), '(')) {
                 // self->kind = NK_FUNCTION_CALL;
-                dtp_ok_or_return(other_res = dtp_function_call(p, depth + 1));
+                dtp_ok_or_return(other_res = dtp_function_call(p, depth + 1, PARENT_IS_EXPR));
                 this_res.instructions_generated += other_res.instructions_generated;
             } 
             // else its variable
@@ -1388,7 +1273,7 @@ DtParseResult dtp_value(DtParser* p, int depth) {
             assert(0 && "Expected int, float or name indent (variable or function)");
     }
 
-    dtp_trace_recursion(p, "value:", depth, "%s", Token_text_cstr(name));
+    dtp_trace_recursion(p, "value:", depth, "%s", token_text_cstr(name));
     return this_res;
 }
 
@@ -1508,7 +1393,7 @@ DtParseResult dtp_variable(DtParser* p, int depth) {
     dtp_expect_sym  (p, dtp_step(p), '=', "Expected '='");
     
 
-    dtp_trace_recursion(p, "variable",depth, "%s", Token_text_cstr(name));
+    dtp_trace_recursion(p, "variable",depth, "%s", token_text_cstr(name));
 
     // self = dtp_rvalue(p, depth++);
     dtp_ok_or_return(other_res = dtp_rvalue(p, depth++));

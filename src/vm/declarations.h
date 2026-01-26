@@ -13,7 +13,7 @@
 #define HC_DA_MACRO_BASED
 #include "../shared/hc.h"
 
-/*  MACROS  */
+/*  GENERIC MACROS  */
 #define da_append           hc_da_append
 #define da_free             hc_da_free
 #define str_fmt(s)          (int)(s).len,(s).ptr
@@ -23,6 +23,7 @@
                                 arrlen(va_wrap(T,__VA_ARGS__))
 #define debug(...) fprintf(stderr, "DEBUG: "__VA_ARGS__)
 #define inst(...) (Instruction) {__VA_ARGS__}
+
 
 #define UNREACHABLE(...) do {\
     fprintf(stderr,"UNREACHABLE at [%s:%s:%d]: ",__FILE__,__func__,__LINE__); \
@@ -245,7 +246,7 @@ typedef struct {
     Object          stack[DTVM_STACK_CAPACITY];
    
     Scopes          scopes;
-    FILE            *tracef, *writef;
+    FILE            *logf, *tracef, *writef;
 } Dtvm;
 
 /*  FUNCTION DECLARATIONS */
@@ -275,12 +276,19 @@ ObjectMap*  dtvm_get_scope(Dtvm* vm);
 void        dtvm_free_scope(ObjectMap* scope);
 
 // VM INTERNALS
+//
+void        dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip);
 Function*   dtvm_get_function(Dtvm* vm, String fnid);
 Object      dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc);
 void        dtvm_if(Dtvm* vm, Function* fn);
 void        dtvm_push(Dtvm* vm, Object value);
 
 // ASSEMBLER
+
+#define dta_trace(tracef, ...) if(tracef) {\
+    fprintf(tracef, __VA_ARGS__);\
+}
+
 
 // VM API
 void dtvm_compile_from_asm(Dtvm* vm, String source, FILE* trace_file);

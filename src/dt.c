@@ -1,51 +1,3 @@
-// TODO:
-// 
-// NEXT:
-//
-// - swap temporary `static char temp` into shared temporary buffer
-// - create type table instead of using just a build-in type ids
-// - string validations and data storage
-// - arrays syntax and validation
-// - object syntax and validation
-//
-// - add build-in: print, cast, binop, typeof, sizeof - operator-functions
-// 
-//
-// - ? continues error checking even after one error was found (skip the branch)
-//      ? idk if i want to do this for this small language since it would overcompliate the parsing process.
-
-// ITERATE ON/APPEND:
-// ~ write ultimate resolver function for types, call it on binop
-// - ~~write system for analisys of return types of each identifer~~
-//      + now dti_eval_* functions do both analysis and interpreting and the role is decided but DtInterpreter.eval_mode boolean
-
-// REFACTOR/ADD:
-// - CLEAN UP THE API FOR END USED
-//      - merge together tokenizer + parser + interpreter
-//      - they all produce a tree that can be run or compiled
-//      - "intepreted" program generates a hash that indicates correctness of program
-//      - on change of source code when dti_interpret() is called, rehash program and rebuild if it has changed, 
-//              otherwish run the program from existing tree.
-//      - when interpreting code, minimal checks should be performed
-// ~ if with elif extender
-// - for loop and 'loop' loop
-// - automated testing of parser and evaluator (interpreter)
-// - add objects and arrays
-// - cleanup DtValue functions
-// ~ system to infer types of expressions and indetifiers
-// - add cast(v, T) 
-
-// - add interpreter analysis errors
-// - add more stuff do stack frame so it polutes less the function arguments for 
-//      all `dti_` functions
-// - use hashmap instead of linear lookup of variables
-
-// COMPLICATED
-// - make all code compile to simple register based vm assembly
-// - compiler and interpteter are two parts of one system
-// - compile to C and have dtdl_load() function to load such code.
-// - simple language runtime for dtdl functionalty
-
 #define PARSER_TRACE  
 #include <stdio.h>
 #define STACK_STARTING_CAPACITY 1024
@@ -53,23 +5,45 @@
 #include "vm/dtvm.h"
 
 // MAIN
-#if 1
+
+#define dti_opt(dti, opt) ((dti).options & (opt))
+enum {
+    DT_OPT_TRACE_INTO_SINGLE_FILE = 1 << 0,
+    DT_OPT_TRACE_VM_EXECUTION = 1 << 1,
+    DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION = 1 << 2,
+    DT_OPT_TRACE_COMPILER_AST_WALKING = 1 << 3,
+    
+    DT_OPT_EXPECT_INITILIZED_STREAM_FILES = 1 << 10,
+};
+
 
 typedef struct {
     DtParser        parser;
     Dtvm            vm;
     FILE            *tracef,
-                    *errorf,
-                    *outputf;
+                    *errorf;
+    FILE    *trace_vm_execution_f,
+            *trace_vm_assembly_f,
+            *trace_compiler_ast_f;
+
+    int options;
+    FILE *outputf;
 } DtInterpreter;
+
+void dt__prepare_parser(DtInterpreter* itrp) {
+    itrp->parser.function_symbols = dtp_init_function_symbols();
+    itrp->parser.tracef = itrp->tracef; 
+}
+
+void dt__prepare_vm(DtInterpreter* itrp) {
+    itrp->vm.writef     = itrp->outputf; 
+    itrp->vm.tracef     = itrp->tracef; 
+}
 
 bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* source, size_t length) {
     bool result = true;
     DtInterpreter* itrp = interpreter;
-    itrp->parser.lexer = DtTokenizer_init(source, length);
-    itrp->parser.tracef = interpreter->tracef; 
-    itrp->parser.tracef = interpreter->tracef; 
-    itrp->vm.writef     = interpreter->outputf; 
+    itrp->parser.lexer  = DtTokenizer_init(source, length);
 
     // DtNode* root = dtp_parse(&c->parser, 0);
     dtp_parse(&(itrp->parser), 0);
@@ -86,17 +60,22 @@ bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* sou
 void dt_run(DtInterpreter* interpreter, const char* entry_point) {
     Dtvm* vm = &(interpreter->vm);
     if(!interpreter->vm.writef) {
+        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
+            assert(0 && "expected output to be manually initilized");
         interpreter->vm.writef     = interpreter->outputf; 
     }
     dtvm_call(vm, string(entry_point), NULL, 0);
     dtvm_print_stack(vm);
 }
 
+
 void dt_reset(DtInterpreter* interpreter) {
     FILE *tracef = interpreter->tracef, 
          *outputf = interpreter->outputf,
          *errorf = interpreter->errorf;
-    dtvm_free(&interpreter->vm);
+    dtvm_free                   (&interpreter->vm);
+    dtp_free_function_symbols   (&(interpreter->parser.function_symbols));
+    free(interpreter->parser.output.items);
     interpreter->tracef = tracef;
     interpreter->outputf = outputf;
     interpreter->errorf = errorf;
@@ -110,6 +89,8 @@ void dt_run_reset(DtInterpreter* interpreter, const char* entry_point) {
 void dt_compile(DtInterpreter* interpreter, const char* source) {
     DtInterpreter*  itrp    = interpreter;
     Dtvm*           vm      = &(itrp->vm);
+    dt__prepare_parser(interpreter);
+    dt__prepare_vm(interpreter);
     dt_compile_assembly_from_string(interpreter, source, strlen(source));
     String assembly = {
         itrp->parser.output.items,
@@ -143,7 +124,6 @@ void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
 // lists are type ignorant, can be of any type
 // objects are like lists, but each member has NAME (identifier).
 // implement loops
-// implement if statements
 // implement arrays and indexing.
 // implement lists.
 // 
@@ -151,12 +131,15 @@ void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
 // - constant folding
 
 // TODO: 
+// - ALL DECLARATIONS FOR VM AND COMPILER ARE IN THEIR CORRESPONDING DECLARATION FILE. 
+//      SHARED DECLARATIONS LIK ARE LOCATED IN SHARED FOLDER.
+//      INTERPERETER LOCATED IN ITS SEPARATE FOLDER
 // - dtp_progragate for applying generated_instructions info and possible parse errors.
 // - rename dtp_ok_or_return to dtp_ok_or_abort
-// - proper Token_to_string() function that isn't crappy
 // - reduce boiler plate related to incrementing instructions emmited
 // - sane reservation of space for instruction when compiling assembly.
 // - make example interpreter emmit assembly of the code.
+// - push string literalls and manage memory for them.
 
 int main(void) {
     // const char* file = "./examples/parsing_00.dt";
@@ -167,70 +150,54 @@ int main(void) {
     // }
 
     DtInterpreter interp = {
-        .tracef  = stderr,
+
+        // .tracef  = stderr,
         .outputf = stdout,
     };
 
-    // const char* assembly_if_source = 
+    // const char* source = str_multiline(
+    //         main() {
+    //             a = 1
+    //             b = 21
+    //             if b < a { 
+    //                 write(a+b)
+    //             } else {
+    //                 write(69)
+    //             }
+    //         }
+    // );
+
+    const char* source = str_multiline(
+        add(l,r) {
+            return l + r
+        }
+        main() {
+            write(add(1,2))
+        }
+    );
+
+    // const char* source = str_multiline(
+    //         rec(i,n) {
+    //             if i < n { return rec(i+1,n) } else { return i }
+    //         }
+    //         main() { write(rec(0,5)) }
+    // );
+
+    // dt_append_assembly(&interp, 
+    //         "fn add l r\n"
+    //             "load l\n"
+    //             "load r\n"
+    //             "add\n"
+    //             "ret\n"
+    //         "endfn\n"
+    //
     //         "fn main\n"
-    //         // $ - nameless variable
-    //         "push 1     \n" 
-    //        
-    //         // if $ == 10
-    //         "cmp 1      \n"
-    //         "ijif 5     \n"
-    //         "pop        \n"
-    //         "pop        \n"
-    //         "push 10   \n"
-    //         "wrt        \n"
-    //         "jmp end     \n" // end
-    //        
-    //         // else if $ == 1
-    //         "pop        \n"
-    //         "cmp 2      \n"
-    //         "ijif 5     \n"
-    //         "pop        \n"
-    //         "pop        \n"
-    //         "push 20  \n"
-    //         "wrt        \n"
-    //         "jmp end    \n" // end
-    //
-    //         // else if $ == 5
-    //         "pop        \n"
-    //         "cmp 3      \n"
-    //         "ijif 5     \n"
-    //         "pop        \n"
-    //         "pop        \n"
-    //         "push 30    \n"
-    //         "wrt        \n"
-    //         "jmp end     \n" // end
-    //
-    //         // clean up if none of the branches match
-    //         "pop\n"
-    //         "pop\n"
-    //         "nop\n"
-    //
-    //         "push 69\n"
-    //         "wrt\n"
-    //         // other code
-    //         "nop\n"
-    //         "@end\n"
-    //         "endfn\n";
-    // dt_append_assembly(&interp,  assembly_if_source);
-    // /*
-    // add(a,b) { return a + b }
-        const char* source = str_multiline(
-                main() {
-                    a = 1
-                    b = 21
-                    if b < a { 
-                        write(a+b)
-                    } else {
-                        write(69)
-                    }
-                }
-        );
-    // */
+    //             "push 11\n"
+    //             "push 22\n"
+    //             "call add\n"
+    //             "call write\n"
+    //         "endfn\n"
+    // );
 
     dt_append_assembly(&interp, 
             "fn write v\n"
@@ -244,10 +211,8 @@ int main(void) {
     // dt_run_reset(&interp, "main");
     // dt_reset(&interp);
 
+    // printf("\n");
     // TODO: check for empty file
     // free(txt);
 }
 
-
-
-#endif

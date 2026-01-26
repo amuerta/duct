@@ -1,4 +1,5 @@
-#include "vm_declaration.h"
+#include "declarations.h"
+#include "assembler.c"
 
 void dtvm_push(Dtvm* vm, Object value) {
     assert(vm->sp != DTVM_STACK_CAPACITY && "Stack overflow");
@@ -52,22 +53,26 @@ void objectmap_print_values(ObjectMap m) {
 void dtvm_print_stack(Dtvm *vm) {
     Object* stack = vm->stack;
     Object* iter = stack;
-    for(size_t i = 0;  
+    if(vm->tracef) for(size_t i = 0;  
             i < vm->sp && 
             i < DTVM_STACK_CAPACITY && 
             iter->type; 
         i++, iter++) 
     {
-        printf("%.6lu\t", i);
-        printf("$%.*s,\t", str_fmt(iter->id));
-        printf("%s;", object_to_string(*iter));
-        printf("\n");
+       fprintf(vm->tracef,"%06lu\t", i);
+       fprintf(vm->tracef,"$%.*s,\t", str_fmt(iter->id));
+       fprintf(vm->tracef,"%s;", object_to_string(*iter));
+       fprintf(vm->tracef,"\n");
     }
 }
 
 //
 // IMPLEMENTATION
 //
+
+static inline bool object_is_null(Object o) {
+    return (!o.type);
+}
 
 static inline Object object_bool(bool b) {
     Object o = {.type = OT_BOOL, .as.B = b};
@@ -278,6 +283,8 @@ Object object_eq(Object l, Object r) {
 
 void object_write(FILE* f, Object o) {
     switch(o.type) {
+        case OT_NULL:
+            fprintf(f, "NULL");
         case OT_BOOL: 
             fprintf(f, "%s", o.as.B ? "true" : "false");
             break;
@@ -297,9 +304,10 @@ void object_write(FILE* f, Object o) {
     }
 }
 
-void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
+Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config, size_t* ip) {
     // Get current object pool
-    ObjectMap* scope = dtvm_get_scope(vm);
+    ObjectMap*  scope = dtvm_get_scope(vm);
+    Object      result = {0};
 
     switch (inst.kind) {
         case DTI_NOP: break;
@@ -323,12 +331,13 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
 
         case DTI_RET:
             {
+                result = dtvm_pop(vm);
                 // entry point
                 if(vm->scopes.top == 0) {
                     // TODO mirgrate memory if needed.
-                    vm->returned_object = dtvm_pop(vm);
+                    vm->returned_object = result;
                 }
-                return;
+                return result;
             } break;
 
         case DTI_CALL:
@@ -337,13 +346,20 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
                 Function* fn = dtvm_get_function(vm, id);
                 assert(fn && "call to underclared function");
                 
+
                 // TODO: move this some better place
                 Object fn_args[64] = {0};
                 for(int i = (int)fn->argc - 1; i >= 0; i--) 
                     fn_args[i] = dtvm_pop(vm);
 
+                size_t prev_sp = vm->sp;
                 vm->scopes.top++;
-                dtvm_call(vm, id, fn_args, fn->argc);
+                
+                Object ret = dtvm_call(vm, id, fn_args, fn->argc);
+                
+                vm->sp = prev_sp + 1;
+                dtvm_push(vm,ret);
+
                 // printf("call to %.*s\n", str_fmt(id));
                 vm->scopes.top--;
             } break;
@@ -362,13 +378,13 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
                 assert(inst.as.ijif.jumpto != -1 && "Uninitilized jump address from a tag.");
                 Object obj = dtvm_peek(vm);
                 if(!obj.as.B)  // jump over to next branch check
-                    fn->ip += inst.as.ijif.jumpto;
+                    *ip += inst.as.ijif.jumpto;
             } break;
 
         case DTI_JMP:
             {
                 assert(inst.as.ijif.jumpto != -1 && "Uninitilized jump address from a tag.");
-                fn->ip = inst.as.ijif.jumpto;
+                *ip = inst.as.ijif.jumpto;
             } break;
 
         case DTI_POP:
@@ -441,6 +457,8 @@ void dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config) {
 
         default: UNREACHABLE("UNSUPPORTED INSTRUCTION");
     }
+
+    return result;
 }
 
 Function* dtvm_get_function(Dtvm* vm, String fnid) {
@@ -480,12 +498,26 @@ ObjectMap* dtvm_get_scope(Dtvm* vm) {
     return current;
 }
 
+void dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip) {
+    if(vm->tracef) {
+        fprintf(vm->tracef, "F:%04lu\t %06lu > %s\n", 
+                vm->scopes.top,
+                ip,
+                dtvm_decompile_instruction(inst)
+               );
+        dtvm_print_stack(vm);
+        fprintf(vm->tracef, "----------------------------\n");
+    }
+}
+
 Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
     // find function or return result 
     Function *fn = dtvm_get_function(vm, fnid);
     assert(fn && "Called function is undefined");
     // Get current object pool
     ObjectMap* scope = dtvm_get_scope(vm);
+
+    assert(vm->scopes.top <= 100 && "EXCEEDED CALL DEPTH");
 
     // Push all arguments 
     assert(fn->argc == argc);
@@ -498,9 +530,14 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
     }
     // Execute instructions TODO(until ret, nop is encountered) or 
     // if all commands are executed
-    for(; fn->ip < fn->code.count; fn->ip++) {
-        Instruction inst = fn->code.items[fn->ip];
-        dtvm_exec_step(vm, fn, inst, vm->config);
+    for(size_t ip = 0; ip < fn->code.count; ip++) {
+        Instruction inst = fn->code.items[ip];
+
+        dtvm_trace_execution(vm,inst,ip);
+
+        Object result = dtvm_exec_step(vm, fn, inst, vm->config, &ip);
+        if (!object_is_null(result)) 
+            return result;
     }
     objectmap_print_values(*scope);
     //__asm__("int3");
@@ -510,6 +547,8 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
     const Object OBJECT_NULL ={0};
     return OBJECT_NULL;
 }
+
+
 
 void dtvm_free(Dtvm* vm) {
     for(size_t i = 0; i < vm->functions.count; i++) 

@@ -1,122 +1,7 @@
-#include "dtc.h"
+#include "declarations.h"
 //
 //  TOKENIZER
 //
-#ifndef __TOKENIZER_H
-#define __TOKENIZER_H
-
-
-#define WIDE_SYMBOL_SZ 4
-
-#define INVALID_INDEX (size_t)(-1)
-#define MUTCSTR(s) ((char*)(s))
-
-#define MIN(a,b) ((a) < (b)) ? (a) : (b)
-#define MAX(a,b) ((a) > (b)) ? (a) : (b)
-
-#ifndef HC_DEFINITION_TYPE_INDEX_T
-#define HC_DEFINITION_TYPE_INDEX_T
-    typedef size_t              index_t;
-#endif//HC_DEFINITION_TYPE_INDEX_T
-
-
-typedef unsigned char 	symbol_t;
-typedef unsigned int	wsymbol_t;
-typedef const char*		cstr_t;
-typedef unsigned int	tokenid_t;
-
-#define TOKENIZER_TOKEN_FMT_CONTENT "$"
-
-#ifndef TOKENIZER_TOKEN_FMT_CONTENT
-#	define TOKENIZER_TOKEN_FMT_CONTENT "text: "
-#endif
-#ifndef TOKENIZER_TOKEN_FMT_KIND
-#	define TOKENIZER_TOKEN_FMT_KIND "kind: "
-#endif
-#ifndef TOKENIZER_TOKEN_FMT_ID
-#	define TOKENIZER_TOKEN_FMT_ID "id: "
-#endif
-
-#ifndef TEMP_CSTR_LENGTH 
-#	define TEMP_CSTR_LENGTH 128
-#endif
-
-#ifndef TOKENIZER_TOKEN_INITIAL_COUNT
-#	define TOKENIZER_TOKEN_INITIAL_COUNT 32
-#endif
-
-
-typedef struct { 
-	const char* 	data;
-	size_t 	length;
-} TknSlice;
-
-typedef struct {
-	const char* 	txt;
-	tokenid_t		id;
-} TokenTableEntry;
-
-typedef enum {
-	TOKEN_KIND_NULL,
-	TOKEN_KIND_SYMBOL,
-	TOKEN_KIND_WORD,
-	TOKEN_KIND_LITERALL_INTEGER,
-	TOKEN_KIND_LITERALL_FLOAT,
-	TOKEN_KIND_LITERALL_STRING,
-    TOKEN_KIND_COMMENT_BLOCK,
-	TOKEN_KIND_EOL,
-	TOKEN_KIND_EOF,
-} TokenKind;
-
-typedef struct {
-    size_t 
-        row, 
-        col;
-
-	TokenKind 	kind;
-	tokenid_t	id;
-	union {
-		symbol_t 	as_symbol;
-		TknSlice	as_word;
-		int			as_int;
-		float		as_float;
-		bool		as_bool;
-	}			data;
-} Token;
-
-typedef struct {
-    Token*  items;
-    size_t  count;
-    size_t  capacity;
-} Tokens;
-
-typedef struct {
-	char*		scratch_buffer;
-    size_t		scratch_buffer_sz;
-
-    // config or user options
-    bool                skip_newline;
-    symbol_t 			string_quotes[2];
-    const char*         comment_block[2];
-
-    // line tracking
-    size_t              row;
-    size_t              col;
-	
-    // string info
-    const char* 		target;
-	size_t				target_length;
-	size_t 				position;
-
-    // user input table
-	TokenTableEntry*	token_table;
-	size_t				token_table_count;
-
-    // memory for linear allocation of tokens
-    // arena kind of
-	Tokens		        tokens;
-} Tokenizer;
-
 
 void Tokenizer_init(
 		Tokenizer* 			t, 
@@ -201,7 +86,7 @@ index_t __tkn_match_table(Tokenizer t) {
 
 unsigned int stoi(const char* str) {
 	unsigned int i = 0;
-	memcpy(&i,str,MIN(sizeof(int),strlen(str)));
+	memcpy(&i,str,min(sizeof(int),strlen(str)));
 	return i;
 }
 
@@ -393,7 +278,7 @@ const char* __tkn_temp_cstr(Token t, bitmask8_t print_flags) {
 		case TOKEN_KIND_LITERALL_STRING:
 			{
 				strcat(cstr,"\"");
-				strncat(cstr, t.data.as_word.data, MIN(t.data.as_word.length,TEMP_CSTR_LENGTH-2));
+				strncat(cstr, t.data.as_word.data, min(t.data.as_word.length,TEMP_CSTR_LENGTH-2));
 				strcat(cstr,"\"");
 			}
 			break;
@@ -452,12 +337,12 @@ TknSlice tkn_as_slice(Token t) {
     return t.data.as_word;
 }
 
-const char* Token_temp_cstr(Token t)  {
+const char* token_temp_cstr(Token t)  {
 	return __tkn_temp_cstr(t,0xFF);
 }
 
-const char* Token_text_cstr(Token t)  {
-	return __tkn_temp_cstr(t,TokenizerPrintFlag_display_text);
+const char* token_text_cstr(Token t)  {
+    return __tkn_temp_cstr(t,TokenizerPrintFlag_display_text);
 }
 
 Token Tokenizer_next_token(Tokenizer* t) {
@@ -590,4 +475,3 @@ void Tokenizer_run(Tokenizer* t) {
 	}
 }
 
-#endif
