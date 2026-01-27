@@ -1,6 +1,4 @@
-#include <errno.h>
 #include "declarations.h"
-
 
 // since i use my generic tokenizer here,
 // i need to initilize Duct tokenizer 
@@ -94,6 +92,28 @@ String token_to_string(Token t) {
     return s;
 }
 
+
+bool dtp_is_ok(DtParseResult r) { 
+    return r.kind >= DT_PNKIND_OK; 
+}
+
+DtParseResult dtp_ok(void) {
+    const DtParseResult r = {.kind = DT_PNKIND_OK }; return r;
+}
+
+DtParseResult dtp_error(void) {
+    const DtParseResult r = {0}; return r;
+}
+
+#define dtp_ok_or_abort(e)\
+    if (!dtp_is_ok(e)) return e; 
+
+#define dtp_trace_recursion(p, name, depth, ...) if(p->tracef) {\
+    fprintf(p->tracef, "%*.s> %s", depth, "\t", name);\
+    fprintf(p->tracef, "%s", dt_temp_format(""__VA_ARGS__));\
+    fprintf(p->tracef, "\n");\
+}
+
 void dtp_print_token_buffer(DtParser p) {
     printf("current: %lu\t", p.current);
     printf("buffer: [ ");
@@ -166,18 +186,8 @@ bool dtp_match_kind(Token t, TokenKind kind) {
         t.kind == kind;
 }
 
-//#define DT_TOKEN_DEBUG
-
-#ifdef DT_TOKEN_DEBUG
-    #define token_dump_str(T) printf("T: %.*s\n", (int) T.data.as_word.length, T.data.as_word.data)
-    #define token_dump_sym(T) printf("T: %c\n", T.data.as_symbol)
-#else 
-    #define token_dump_str(T) /* nothing */
-    #define token_dump_sym(T) /* nothing */
-#endif
 
 bool dtp_match_str(Token t, const char* text) {
-    token_dump_str(t);
     return 
         dtp_valid_token(t) &&
         t.kind == TOKEN_KIND_WORD && 
@@ -187,7 +197,6 @@ bool dtp_match_str(Token t, const char* text) {
 }
 
 bool dtp_match_sym(Token t,char sym) {
-    token_dump_sym(t);
     return 
         dtp_valid_token(t) &&
         t.kind == TOKEN_KIND_SYMBOL && 
@@ -330,37 +339,6 @@ bool tkn_strcmp(Token t, const char* cmp) {
     return tkn_strncmp(t, cmp, strlen(cmp));
 }
 
-DtNode* dtp_node_new(DtParser* p) {
-    DtNode* node = arena_alloc(&(p->allocator), sizeof(DtNode));
-    node->source_location = p->current_token; 
-    return node;
-}
-
-DtNode* dtp_node_push(DtNode* begin, DtNode* item) {
-    if (!begin)
-        begin = item;
-    else if (!begin->next)
-        begin->next = item;
-    else {
-        DtNode* tail = begin;
-        while(tail->next)
-            tail = tail->next;
-        tail->next = item;
-    }
-    return begin;
-}
-
-DtNode* dtp_node_append(DtNode* father, DtNode* children) {
-    if(!father->children) {
-        father->children = children;
-    } else {
-        DtNode* tail = father->children;
-        while(tail->next)
-            tail = tail->next;
-        tail->next = children;
-    }
-    return father;
-}
 
 
 
@@ -398,7 +376,7 @@ DtParseResult dtp_if_statement            (DtParser* p, int depth)  {
         BRANCH_ELIF, 
         BRANCH_ELSE, 
     } branch_type = BRANCH_IF;
-
+    dtp_trace_recursion(p, "statement:", depth);
 
     StringBuilder* sb = &(p->output);
     DtParseResult other_res = dtp_ok(),
@@ -428,7 +406,7 @@ parse_branch_again: ;
     }
     
     // expression
-    dtp_ok_or_return(other_res = dtp_expression(p, depth + 1));
+    dtp_ok_or_abort(other_res = dtp_expression(p, depth + 1));
     this_res.instructions_generated += other_res.instructions_generated;
 
     // lazy hack, i reserve some amount for the line text
@@ -460,7 +438,7 @@ parse_branch_again: ;
 
 
     // block
-    dtp_ok_or_return(other_res = dtp_block(p, depth + 1, true));
+    dtp_ok_or_abort(other_res = dtp_block(p, depth + 1, true));
     this_res.instructions_generated += other_res.instructions_generated;
 
     // TODO: FIX UNSAFE OVERWRITE POSSIBILITY!
@@ -507,12 +485,12 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
     StringBuilder* sb = &p->output;
     DtParseResult this_res = dtp_ok(),
                   other_res = dtp_ok();
-    dtp_trace_recursion(p, "statement:", depth, );
+    dtp_trace_recursion(p, "statement:", depth);
     // 'return'
     if (dtp_match_str(dtp_ahead(p), "return")) {
         // remember to step
         dtp_step(p);
-        dtp_ok_or_return(other_res = dtp_expression(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_expression(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
         this_res.instructions_generated ++;
         sb_append(sb, "\tret\n");
@@ -521,7 +499,7 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
 
     // if
     else if(dtp_match_str(dtp_ahead(p),"if")) {
-        dtp_ok_or_return(other_res = dtp_if_statement(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_if_statement(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
         // return self;
     }
@@ -540,7 +518,7 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
             dtp_match_sym(dtp_aheadc(p,2),'(')              )
     {
         dtp_step(p);
-        dtp_ok_or_return(other_res = dtp_function_call(p, depth + 1, !PARENT_IS_EXPR));
+        dtp_ok_or_abort(other_res = dtp_function_call(p, depth + 1, !PARENT_IS_EXPR));
         this_res.instructions_generated += other_res.instructions_generated;
         // return result;
     } 
@@ -548,7 +526,7 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
     // variable
     else {
         Token before = p->current_token;//dtp_ahead(p);
-        dtp_ok_or_return(other_res = dtp_variable(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_variable(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
         // return self;
     }
@@ -570,7 +548,7 @@ DtParseResult dtp_function_return_type(DtParser* p, int depth) {
 }
 
 DtParseResult dtp_block(DtParser* p, int depth, bool step_at_last) {
-    dtp_trace_recursion(p, "block:", depth, );
+    dtp_trace_recursion(p, "block:", depth);
     DtParseResult this_res  = dtp_ok(),
                   other_res = dtp_ok();
 
@@ -584,7 +562,7 @@ DtParseResult dtp_block(DtParser* p, int depth, bool step_at_last) {
     dtp_expect_sym(p, dtp_step(p), '{', "Expected '{' ");
     //while((!dtp_match_sym(dtp_ahead(p), '}')) && statement) {
     while((!dtp_match_sym(dtp_ahead(p), '}'))) {
-        dtp_ok_or_return(other_res = dtp_statement(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_statement(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
         /*if (!statement) {
             dtp_error_token(p, p->current_token, "Failed to parse statement in block");
@@ -646,7 +624,7 @@ DtParseResult dtp_function_declaration(DtParser* p, int depth) {
     Token  name = p->current_token;
     String name_string = token_to_string(p->current_token);
 
-    dtp_trace_recursion(p, "function:", depth, "%s", token_text_cstr(p->current_token));
+    dtp_trace_recursion(p, "function:", depth, "%s", token_as_cstr(p->current_token));
     sb_appendf(sb, "fn %.*s ", 
             (int)p->current_token.data.as_word.length,
             p->current_token.data.as_word.data
@@ -661,7 +639,7 @@ DtParseResult dtp_function_declaration(DtParser* p, int depth) {
     switch ((arg_token = dtp_ahead(p)).kind) {
  
         case TOKEN_KIND_WORD:
-            dtp_ok_or_return(dtp_symbol_declaration(p, depth + 1));
+            dtp_ok_or_abort(dtp_symbol_declaration(p, depth + 1));
             argc++;
             goto dtp_array_next;
             break;
@@ -729,7 +707,7 @@ DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expressio
 
     dtp_expect_kind (p,p->current_token, TOKEN_KIND_WORD, "Expected word");
     name = p->current_token;
-    dtp_trace_recursion(p, "fncall ", depth, "'%s'", token_text_cstr(name));
+    dtp_trace_recursion(p, "fncall ", depth, "'%s'", token_as_cstr(name));
     
     dtp_expect_sym  (p,dtp_step(p), '(', "Expected '('");
 
@@ -742,7 +720,7 @@ DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expressio
     else {
         argc++;
         // dtp_node_append(self, dtp_expression(p, depth+1));
-        dtp_ok_or_return(other_res = dtp_expression(p, depth+1));
+        dtp_ok_or_abort(other_res = dtp_expression(p, depth+1));
         this_res.instructions_generated += other_res.instructions_generated;
 
         goto dtp_array_next;
@@ -886,18 +864,18 @@ DtParseResult dtp_equality(DtParser* p, int depth) {
     bool is_equality[2] = {0};
     // DtNode *l = 0, *r = 0, *rr = 0;
     // l = dtp_comparison(p, depth + 1);
-    dtp_ok_or_return(other_res = dtp_comparison(p, depth + 1));
+    dtp_ok_or_abort(other_res = dtp_comparison(p, depth + 1));
     this_res.instructions_generated += other_res.instructions_generated;
 
     if (dtp_is_eql(dtp_ahead(p))) {
-        dtp_trace_recursion(p, "eq |",depth, );
+        dtp_trace_recursion(p, "eq |",depth);
         
         if (dtp_match_str(dtp_step(p),"==")) 
             is_equality[OP_CMP_ONCE] = true;
 
         // r = dtp_factor(p, depth + 1);
-        // dtp_ok_or_return(other_res = dtp_comparison(p, depth + 1));
-        dtp_ok_or_return(other_res = dtp_factor(p, depth + 1));
+        // dtp_ok_or_abort(other_res = dtp_comparison(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_factor(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
 
         this_res.instructions_generated++;
@@ -916,7 +894,7 @@ DtParseResult dtp_equality(DtParser* p, int depth) {
             
             // rr = dtp_term(p, depth + 1);
             // r = dtp_branch(p, r, rr, NK_EQALITY);
-            dtp_ok_or_return(other_res = dtp_term(p, depth + 1));
+            dtp_ok_or_abort(other_res = dtp_term(p, depth + 1));
             this_res.instructions_generated += other_res.instructions_generated;
             
 
@@ -972,11 +950,11 @@ DtParseResult dtp_comparison(DtParser* p, int depth) {
 
     // DtNode *l = 0, *r = 0, *rr = 0;
     // l = dtp_term(p, depth + 1);
-    dtp_ok_or_return(other_res = dtp_term(p, depth + 1));
+    dtp_ok_or_abort(other_res = dtp_term(p, depth + 1));
     this_res.instructions_generated += other_res.instructions_generated;
 
     if (dtp_is_cmp(dtp_ahead(p))) {
-        dtp_trace_recursion(p, "compare |",depth, );
+        dtp_trace_recursion(p, "compare |",depth);
 
         Token cmp = dtp_step(p);
         if (dtp_match_sym(cmp,'>')) 
@@ -993,7 +971,7 @@ DtParseResult dtp_comparison(DtParser* p, int depth) {
             assert(0);
 
         // r = dtp_term(p, depth + 1);
-        dtp_ok_or_return(other_res = dtp_term(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_term(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
 
         this_res.instructions_generated++;
@@ -1023,7 +1001,7 @@ DtParseResult dtp_comparison(DtParser* p, int depth) {
             
             // rr = dtp_comparison(p, depth + 1);
             // r = dtp_branch(p, r, rr, NK_COMPARISON);
-            dtp_ok_or_return(other_res = dtp_comparison(p, depth + 1));
+            dtp_ok_or_abort(other_res = dtp_comparison(p, depth + 1));
             this_res.instructions_generated += other_res.instructions_generated;
             
 
@@ -1070,17 +1048,17 @@ DtParseResult dtp_term(DtParser* p, int depth) {
     bool is_plus[2] = {0};
     // DtNode *l = 0, *r = 0, *rr = 0;
     // l = dtp_factor(p, depth + 1);
-    dtp_ok_or_return(other_res = dtp_factor(p, depth + 1));
+    dtp_ok_or_abort(other_res = dtp_factor(p, depth + 1));
     this_res.instructions_generated += other_res.instructions_generated;
 
     if (dtp_is_add(dtp_ahead(p))) {
-        dtp_trace_recursion(p, "term |",depth, );
+        dtp_trace_recursion(p, "term |",depth);
 
         if (dtp_match_sym(dtp_step(p),'+')) 
             is_plus[OP_ADD_ONCE] = true;
          
         // r = dtp_factor(p, depth + 1);
-        dtp_ok_or_return(other_res = dtp_factor(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_factor(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
         // sb_merge(&before, after);
 
@@ -1138,11 +1116,11 @@ DtParseResult dtp_factor(DtParser* p, int depth) {
     // DtNode *l = 0, *r = 0, *rr = 0;
     //l = dtp_primary(p, depth + 1);
     // l = dtp_unary(p, depth + 1);
-    dtp_ok_or_return(other_res = dtp_unary(p, depth + 1));
+    dtp_ok_or_abort(other_res = dtp_unary(p, depth + 1));
     this_res.instructions_generated += other_res.instructions_generated;
 
     if (dtp_is_mul(dtp_ahead(p))) {
-        dtp_trace_recursion(p, "factor   |",depth, );
+        dtp_trace_recursion(p, "factor   |",depth);
 
         if (dtp_match_sym(dtp_step(p),'*')) 
             is_mul[OP_MUL_ONCE] = true;
@@ -1150,7 +1128,7 @@ DtParseResult dtp_factor(DtParser* p, int depth) {
         // r = dtp_unary(p, depth + 1);
         // dtp_unary(p, depth + 1);
 
-        dtp_ok_or_return(other_res = dtp_unary(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_unary(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
 
         this_res.instructions_generated++;
@@ -1166,7 +1144,7 @@ DtParseResult dtp_factor(DtParser* p, int depth) {
             // rr = dtp_factor(p, depth + 1);
             // r = dtp_branch(p, r, rr, NK_FACTOR);
 
-            dtp_ok_or_return(other_res = dtp_factor(p, depth + 1));
+            dtp_ok_or_abort(other_res = dtp_factor(p, depth + 1));
             this_res.instructions_generated += other_res.instructions_generated;
 
             this_res.instructions_generated++;
@@ -1191,10 +1169,10 @@ DtParseResult dtp_unary(DtParser* p, int depth) {
                   other_res = dtp_ok();
     StringBuilder* sb = &(p->output);
     if (dtp_is_unary(dtp_ahead(p))) {
-        dtp_trace_recursion(p, "unary",depth, );
+        dtp_trace_recursion(p, "unary",depth);
         dtp_step(p); // skip unary
         
-        dtp_ok_or_return(other_res = dtp_unary(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_unary(p, depth + 1));
 
         this_res.instructions_generated += other_res.instructions_generated;
         this_res.instructions_generated+=2;
@@ -1205,7 +1183,7 @@ DtParseResult dtp_unary(DtParser* p, int depth) {
         // self->properties |= NKP_HAS_UNARY;
     } else { 
         // self = dtp_primary(p, depth + 1);
-        dtp_ok_or_return(other_res = dtp_primary(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_primary(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
     }
     return this_res;
@@ -1259,7 +1237,7 @@ DtParseResult dtp_value(DtParser* p, int depth) {
             // if `word` `(` -> function
             if (dtp_match_sym(dtp_ahead(p), '(')) {
                 // self->kind = NK_FUNCTION_CALL;
-                dtp_ok_or_return(other_res = dtp_function_call(p, depth + 1, PARENT_IS_EXPR));
+                dtp_ok_or_abort(other_res = dtp_function_call(p, depth + 1, PARENT_IS_EXPR));
                 this_res.instructions_generated += other_res.instructions_generated;
             } 
             // else its variable
@@ -1273,7 +1251,7 @@ DtParseResult dtp_value(DtParser* p, int depth) {
             assert(0 && "Expected int, float or name indent (variable or function)");
     }
 
-    dtp_trace_recursion(p, "value:", depth, "%s", token_text_cstr(name));
+    dtp_trace_recursion(p, "value:", depth, "%s", token_as_cstr(name));
     return this_res;
 }
 
@@ -1286,10 +1264,10 @@ DtParseResult dtp_primary(DtParser* p, int depth) {
                   other_res = dtp_ok();
 
     if (dtp_match_sym(dtp_ahead(p), '(')) {
-        dtp_trace_recursion(p, "primary", depth, );
+        dtp_trace_recursion(p, "primary", depth);
         dtp_expect_sym(p, dtp_step(p), '(', "Expected '('");
         
-        dtp_ok_or_return(other_res = dtp_equality(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_equality(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
 
         // self = dtp_equality(p, depth + 1);
@@ -1304,7 +1282,7 @@ DtParseResult dtp_primary(DtParser* p, int depth) {
         dtp_expect_sym(p, dtp_step(p), ')', "Expected ')'");
         return this_res;
     } else if (dtp_is_value(dtp_ahead(p))) {
-        dtp_ok_or_return(other_res = dtp_value(p, depth + 1));
+        dtp_ok_or_abort(other_res = dtp_value(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
     } else {
         // TODO: handle post expression symbols,
@@ -1320,14 +1298,14 @@ DtParseResult dtp_primary(DtParser* p, int depth) {
 
 
 DtParseResult dtp_expression(DtParser* p, int depth) {
-    dtp_trace_recursion(p, "expr",depth, );
+    dtp_trace_recursion(p, "expr",depth);
     IGNORE_VALUE depth;
     DtParseResult this_res = dtp_ok();
     // DtNode* self = dtp_node_new(p);
     //DtNode* node = {0};
 
     // DtNode* node = dtp_equality(p, depth + 1);
-    dtp_ok_or_return(this_res = dtp_equality(p, depth + 1));
+    dtp_ok_or_abort(this_res = dtp_equality(p, depth + 1));
     //Token value = dtp_step(p);
     //dtp_expect_kind(value, TOKEN_KIND_literall_integer, "TODO: add more the just integers for expression");
     
@@ -1340,7 +1318,7 @@ DtParseResult dtp_expression(DtParser* p, int depth) {
 
 DtParseResult dtp_array(DtParser *p, int depth) {
 
-    dtp_trace_recursion(p, "array",depth, );
+    dtp_trace_recursion(p, "array",depth);
     // DtNode* self = dtp_node_new(p);
     // DtNode* node = {0};
 
@@ -1393,10 +1371,10 @@ DtParseResult dtp_variable(DtParser* p, int depth) {
     dtp_expect_sym  (p, dtp_step(p), '=', "Expected '='");
     
 
-    dtp_trace_recursion(p, "variable",depth, "%s", token_text_cstr(name));
+    dtp_trace_recursion(p, "variable",depth, "%s", token_as_cstr(name));
 
     // self = dtp_rvalue(p, depth++);
-    dtp_ok_or_return(other_res = dtp_rvalue(p, depth++));
+    dtp_ok_or_abort(other_res = dtp_rvalue(p, depth++));
     this_res.instructions_generated += other_res.instructions_generated;
 
     this_res.instructions_generated++;
@@ -1447,7 +1425,7 @@ DtParseResult dtp_rvalue(DtParser* p, int depth) {
                     // }
                 } else if (dtp_is_expression(ahead)) {
                     // dtp_node_append(self,(node = dtp_expression(p, depth + 1))); 
-                    dtp_ok_or_return(other_res = dtp_expression(p, depth + 1)); 
+                    dtp_ok_or_abort(other_res = dtp_expression(p, depth + 1)); 
                     this_res.instructions_generated += other_res.instructions_generated;
                 } else {
                     return dtp_error();
@@ -1463,8 +1441,7 @@ DtParseResult dtp_rvalue(DtParser* p, int depth) {
 
 
 bool dtp_parse(DtParser* p, int depth) {
-
-    dtp_trace_recursion(p, "ROOT:", depth, );
+    dtp_trace_recursion(p, "ROOT:", depth);
 
     // DtNode* self = dtp_node_new(p);
     //DtNode* node = {0};
@@ -1529,31 +1506,6 @@ bool dtp_parse(DtParser* p, int depth) {
     }
     return true;
 }
-
-DtNode* dtp_node_index(DtNode* node, size_t i) {
-    size_t counter = 0;
-    DtNode* next = node;
-    while(next) {
-        if (counter == i) return next;
-        counter++;
-        next = next->next;
-    }
-    return 0;
-}
-
-// DtNode* dtp_node_get(DtNode* node, DtNodeKind kind) {
-//     if (!node) return NULL;
-//     if (node && node->kind == kind) return node;
-//     DtNode* next = node->children;
-//     DtNode* result = 0;
-//     while(next) {
-//         if (next->kind == kind) return next;
-//         result = dtp_node_get(next->children, kind);
-//         if(result) return result;
-//         next = next->next;
-//     }
-//     return NULL;
-// }
 
 // TODO: print literalls
 // TODO: print expressions in parenthesis as if they where 

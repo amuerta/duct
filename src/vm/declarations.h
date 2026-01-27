@@ -1,45 +1,11 @@
 #ifndef __DTVM_DEFINITIONS_H 
 #define __DTVM_DEFINITIONS_H 
 
-/*  LIBC    */
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <assert.h>
-#include <math.h>
-
-/*  STRING, SB, DA  */
-#define HC_DA_MACRO_BASED
-#include "../shared/hc.h"
-
-/*  GENERIC MACROS  */
-#define da_append           hc_da_append
-#define da_free             hc_da_free
-#define str_fmt(s)          (int)(s).len,(s).ptr
-#define arrlen(A)           (sizeof(A)/sizeof(A[0]))
-#define va_wrap(T,...)      ((T[]) __VA_ARGS__)
-#define va_array(T,...)     va_wrap(T,__VA_ARGS__),\
-                                arrlen(va_wrap(T,__VA_ARGS__))
-#define debug(...) fprintf(stderr, "DEBUG: "__VA_ARGS__)
-#define inst(...) (Instruction) {__VA_ARGS__}
-
-
-#define UNREACHABLE(...) do {\
-    fprintf(stderr,"UNREACHABLE at [%s:%s:%d]: ",__FILE__,__func__,__LINE__); \
-    fprintf(stderr,__VA_ARGS__); \
-    fprintf(stderr,"\n"); \
-    abort();\
-} while(0)
-
+#include "../config.h"
+#include "../shared/shared.h"
+#include "../shared/hc_plug.h"
 
 /*  DEFINES OR CONSTANTS    */
-#define         DTVM_SCOPES                         256
-#define         DTVM_OBJECT_MAP_CAPACITY            256
-#define         DTVM_STACK_CAPACITY                 1024
-#define         DT_SCRATCH_BUFFER_SIZE              1024
-#define         DTVM_MAX_ITERATORS                  32
-#define         DTVM_TEMPORARY_STRING_BUILDER_CAP   512
 #define         DT_SIZE_T_INVALID                   ((size_t)-1)
 
 /*  ENUMS   */
@@ -112,10 +78,6 @@ enum {
     
     DTSTAT_COUNT,
 } ECompileStatus;
-
-enum {
-    DTVM_CONFIG_TRACE_LOG
-} EDtvmConfig; 
 
 enum {
     ELINE_INSTRUCTION,
@@ -235,7 +197,7 @@ typedef struct {
 
 // WM
 typedef struct {
-    unsigned int    config;
+    int             options_mirror; // mirror of options from interpreter.
 
     // TODO: use arena allocator per stack frame
     //Arena           allocator; 
@@ -246,7 +208,7 @@ typedef struct {
     Object          stack[DTVM_STACK_CAPACITY];
    
     Scopes          scopes;
-    FILE            *logf, *tracef, *writef;
+    FILE            *logf, *asmtracef, *tracef, *writef;
 } Dtvm;
 
 /*  FUNCTION DECLARATIONS */
@@ -291,6 +253,6 @@ void        dtvm_push(Dtvm* vm, Object value);
 
 
 // VM API
-void dtvm_compile_from_asm(Dtvm* vm, String source, FILE* trace_file);
+void dtvm_compile_from_asm(Dtvm* vm, String source);
 
 #endif//__DTVM_DEFINITIONS_H 

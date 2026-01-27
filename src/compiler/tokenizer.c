@@ -331,18 +331,54 @@ const char* __tkn_temp_cstr(Token t, bitmask8_t print_flags) {
 }
 
 
-#define tkn_fmt(s) (int)(s.length), (s.data)
 
 TknSlice tkn_as_slice(Token t) {
+    assert(t.kind == TOKEN_KIND_WORD || t.kind == TOKEN_KIND_LITERALL_STRING);
     return t.data.as_word;
 }
+const char* token_as_cstr(Token t)  {
+    static char temp[DT_SCRATCH_BUFFER_SIZE];
+    memset(temp, 0, sizeof(temp));
+    TknSlice str;
+	switch(t.kind) {
+		case TOKEN_KIND_NULL:
+			strcpy(temp, "(null)"); 
+			break;
+		case TOKEN_KIND_SYMBOL:
+			sprintf(temp, "%c", t.data.as_symbol); 
+			break;
+		case TOKEN_KIND_WORD:
+            str = tkn_as_slice(t);
+            assert(str.length < DT_SCRATCH_BUFFER_SIZE - 1);
+            memcpy(temp, str.data, str.length);
+			break;
+		case TOKEN_KIND_LITERALL_INTEGER:
+			sprintf(temp,"%i",t.data.as_int);
+			break;
+		case TOKEN_KIND_LITERALL_FLOAT:
+			sprintf(temp,"%f",t.data.as_float);
+			break;
+		case TOKEN_KIND_LITERALL_STRING:
+			{
+                str = tkn_as_slice(t);
+                assert(str.length < DT_SCRATCH_BUFFER_SIZE - 1);
+				strcat (temp,"\"");
+				strncat(temp, str.data, min(str.length,TEMP_CSTR_LENGTH-2));
+				strcat (temp,"\"");
+			}
+			break;
+		case TOKEN_KIND_EOL:
+			sprintf(temp, "(EOL)");
+			break;
+		case TOKEN_KIND_EOF:
+			sprintf(temp, "(EOF)");
+			break;
+		default:
+            assert(0);
+		
+    }
 
-const char* token_temp_cstr(Token t)  {
-	return __tkn_temp_cstr(t,0xFF);
-}
-
-const char* token_text_cstr(Token t)  {
-    return __tkn_temp_cstr(t,TokenizerPrintFlag_display_text);
+    return temp;
 }
 
 Token Tokenizer_next_token(Tokenizer* t) {

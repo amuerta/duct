@@ -1,20 +1,11 @@
 #define PARSER_TRACE  
 #include <stdio.h>
-#define STACK_STARTING_CAPACITY 1024
 #include "compiler/dtc.h"
 #include "vm/dtvm.h"
 
 // MAIN
 
 #define dti_opt(dti, opt) ((dti).options & (opt))
-enum {
-    DT_OPT_TRACE_INTO_SINGLE_FILE = 1 << 0,
-    DT_OPT_TRACE_VM_EXECUTION = 1 << 1,
-    DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION = 1 << 2,
-    DT_OPT_TRACE_COMPILER_AST_WALKING = 1 << 3,
-    
-    DT_OPT_EXPECT_INITILIZED_STREAM_FILES = 1 << 10,
-};
 
 
 typedef struct {
@@ -32,21 +23,49 @@ typedef struct {
 
 void dt__prepare_parser(DtInterpreter* itrp) {
     itrp->parser.function_symbols = dtp_init_function_symbols();
-    itrp->parser.tracef = itrp->tracef; 
+    itrp->parser.tracef = itrp->trace_compiler_ast_f; 
 }
 
-void dt__prepare_vm(DtInterpreter* itrp) {
-    itrp->vm.writef     = itrp->outputf; 
-    itrp->vm.tracef     = itrp->tracef; 
+void dt__prepare_vm(DtInterpreter* interpreter) {
+    Dtvm* vm = &(interpreter->vm);
+
+    interpreter->vm.writef     = interpreter->outputf; 
+    interpreter->vm.tracef     = interpreter->trace_vm_execution_f; 
+    interpreter->vm.asmtracef  = interpreter->trace_vm_assembly_f; 
+
+    // vm assembly tracing
+    if(dti_opt(*interpreter, DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION)) {
+        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
+            assert(vm->asmtracef && "expected to have assembler trace file to be initilized");
+        else { if(!vm->asmtracef) vm->asmtracef = stderr; }
+    }
+
+    // vm execution tracing
+    if(dti_opt(*interpreter, DT_OPT_TRACE_VM_EXECUTION)) {
+        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
+            assert(vm->tracef && "expected to have vm execution trace file to be initilized");
+        else { if(!vm->tracef) vm->tracef = stderr; }
+    }
 }
 
 bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* source, size_t length) {
     bool result = true;
     DtInterpreter* itrp = interpreter;
-    itrp->parser.lexer  = DtTokenizer_init(source, length);
-
+    DtParser* parser = &(interpreter->parser);
+    
+    parser->lexer           = DtTokenizer_init(source, length);
+    parser->options_mirror  = itrp->options;
     // DtNode* root = dtp_parse(&c->parser, 0);
-    dtp_parse(&(itrp->parser), 0);
+    
+    
+    // check for initilized trace file.
+    if(dti_opt(*interpreter, DT_OPT_TRACE_COMPILER_AST_WALKING)) {
+        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
+            assert(parser->tracef && "expected to have AST trace file to be initilized");
+        else { if(!parser->tracef) parser->tracef = stderr; }
+    }
+
+    dtp_parse(parser, 0);
     //DtNode* root = dtp_block(&parser, 0, false);
     // dtp_print_ast(root, 0, stdout);
     arena_free(&itrp->parser.allocator);
@@ -54,16 +73,9 @@ bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* sou
 }
 
 // TODO: api nob style like `cmd_append()`
-#define sb_fmt(sb) (int)sb.count, sb.items
-#define str_multiline(...) #__VA_ARGS__
 
 void dt_run(DtInterpreter* interpreter, const char* entry_point) {
     Dtvm* vm = &(interpreter->vm);
-    if(!interpreter->vm.writef) {
-        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
-            assert(0 && "expected output to be manually initilized");
-        interpreter->vm.writef     = interpreter->outputf; 
-    }
     dtvm_call(vm, string(entry_point), NULL, 0);
     dtvm_print_stack(vm);
 }
@@ -82,7 +94,7 @@ void dt_reset(DtInterpreter* interpreter) {
 }
 
 void dt_run_reset(DtInterpreter* interpreter, const char* entry_point) {
-    dt_run(interpreter, entry_point);
+    dt_run  (interpreter, entry_point);
     dt_reset(interpreter);
 }
 
@@ -96,7 +108,7 @@ void dt_compile(DtInterpreter* interpreter, const char* source) {
         itrp->parser.output.items,
         itrp->parser.output.count
     };
-    dtvm_compile_from_asm(vm, assembly, interpreter->tracef);
+    dtvm_compile_from_asm(vm, assembly);
 }
 
 void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
@@ -115,7 +127,7 @@ void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
 }
 
 void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
-    dtvm_compile_from_asm(&(inter->vm), str_make(assembly), inter->tracef);
+    dtvm_compile_from_asm(&(inter->vm), str_make(assembly));
 }
 
 // TODO:
@@ -131,11 +143,7 @@ void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
 // - constant folding
 
 // TODO: 
-// - ALL DECLARATIONS FOR VM AND COMPILER ARE IN THEIR CORRESPONDING DECLARATION FILE. 
-//      SHARED DECLARATIONS LIK ARE LOCATED IN SHARED FOLDER.
-//      INTERPERETER LOCATED IN ITS SEPARATE FOLDER
 // - dtp_progragate for applying generated_instructions info and possible parse errors.
-// - rename dtp_ok_or_return to dtp_ok_or_abort
 // - reduce boiler plate related to incrementing instructions emmited
 // - sane reservation of space for instruction when compiling assembly.
 // - make example interpreter emmit assembly of the code.
@@ -151,7 +159,13 @@ int main(void) {
 
     DtInterpreter interp = {
 
-        // .tracef  = stderr,
+        .options = 0 
+            // | DT_OPT_EXPECT_INITILIZED_STREAM_FILES
+            // | DT_OPT_TRACE_VM_EXECUTION               
+            | DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION    
+            | DT_OPT_TRACE_COMPILER_AST_WALKING       
+        ,
+        .tracef  = stderr,
         .outputf = stdout,
     };
 

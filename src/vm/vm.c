@@ -304,7 +304,9 @@ void object_write(FILE* f, Object o) {
     }
 }
 
-Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config, size_t* ip) {
+#define dtvm_opt(vm, opt) (vm.options_mirror & (opt))
+
+Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
     // Get current object pool
     ObjectMap*  scope = dtvm_get_scope(vm);
     Object      result = {0};
@@ -322,11 +324,6 @@ Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, int config, size
                 Object obj  = dtvm_pop(vm);
                 Object* tp  = object_reserve_or_get(scope, id);
                 object_store(tp, obj);
-                if(vm->config & DTVM_CONFIG_TRACE_LOG)
-                    fprintf(vm->tracef, "\tstore %.*s %s\n", 
-                            str_fmt(id),
-                            object_to_string(*tp)
-                    );
             } break;
 
         case DTI_RET:
@@ -535,7 +532,7 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
 
         dtvm_trace_execution(vm,inst,ip);
 
-        Object result = dtvm_exec_step(vm, fn, inst, vm->config, &ip);
+        Object result = dtvm_exec_step(vm, fn, inst, &ip);
         if (!object_is_null(result)) 
             return result;
     }

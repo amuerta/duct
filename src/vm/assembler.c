@@ -164,18 +164,6 @@ const char* dtvm_decompile_instruction(Instruction i) {
     return (const char*) sb.items;
 }
 
-
-String string_alloc_to_arena(Arena* allocator, String it) {
-    char* string = arena_alloc(allocator, it.len);
-    memcpy(string, it.ptr, it.len);
-    String moved = {
-        .ptr = string,
-        .len = it.len
-    };
-    return moved;
-}
-
-
 // TODO: all symbol slices and other string data is stored
 // in special linear memory (string builder)
 LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) {
@@ -595,13 +583,15 @@ Function dtvm_function_pack(String name,  Instructions* code, String* argv, size
     return fn;
 }
 
-void dtvm_compile_from_asm(Dtvm* vm, String source, FILE* trace_file) {
+void dtvm_compile_from_asm(Dtvm* vm, String source) {
     assert(!str_is_empty(source));
     Arena allocator     = {0};
     //String fn_name         = {0};
     String leftovers    = source;
     String fn_name      = {0}; 
     int i = 0;
+
+    FILE* trace_file = vm->asmtracef;
 
     dta_trace(trace_file, "\n### COMPILING ASSEMBLY ###\n");
     do {

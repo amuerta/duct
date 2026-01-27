@@ -1,26 +1,18 @@
 #ifndef __DT_COMPILER_DECLARATIONS
 #define __DT_COMPILER_DECLARATIONS
 
+#include "../config.h"
+#include "../shared/shared.h"
 
 /*
  * Handy C Header glue 
  */
-
-#define HC_DA_MACRO_BASED
-#include "../shared/hc.h"
-
-#define da_append hc_da_append
-#define IGNORE_VALUE (void)
-
-#define min hc_min
-#define max hc_max
-
+#include "../shared/hc_plug.h"
 
 /*
  *  TOKENIZER
  */
 
-#define WIDE_SYMBOL_SZ 4
 #define INVALID_INDEX (size_t)(-1)
 
 #ifndef HC_DEFINITION_TYPE_INDEX_T
@@ -50,18 +42,15 @@ typedef unsigned int	tokenid_t;
 #	define TOKENIZER_TOKEN_FMT_ID "id: "
 #endif
 
-#ifndef TEMP_CSTR_LENGTH 
-#	define TEMP_CSTR_LENGTH 128
-#endif
-
+#define TEMP_CSTR_LENGTH DT_SCRATCH_BUFFER_SIZE
 #ifndef TOKENIZER_TOKEN_INITIAL_COUNT
 #	define TOKENIZER_TOKEN_INITIAL_COUNT 32
 #endif
 
 
 typedef struct { 
-	const char* 	data;
-	size_t 	length;
+	const char* data;
+	size_t 	    length;
 } TknSlice;
 
 typedef struct {
@@ -136,8 +125,6 @@ typedef struct {
 // PARSER
 //
 
-#define PARSER_TOKEN_BUFFER_SIZE    8
-#define PARSER_LOOK_AHEAD_COUNT     4
 
 typedef enum {
     TI_NULL,
@@ -186,42 +173,9 @@ typedef struct {
     size_t  length;
 } Slice;
 
-typedef struct {
-    const char**    indent;
-    size_t          count;
-    size_t          capacity;
-} TempIndentsList;
-
-typedef struct {
-    byte    type;
-    byte    properties;
-    Slice   identifier;
-    union {
-        bool        as_bool;
-        byte        as_byte;
-        int         as_int;
-        float       as_float;
-        int         as_type;
-        Slice       as_slice;
-    } memory;
-} DtLiterall;
-
-// TODO?: use union to make DtNode reuseable for both interpreting and parsing
-// by orginizing them by mode of operation
-typedef struct DtNode {
-    Token           source_location;// for error checking
-
-    // DtNodeKind      kind;
-    int             properties; // is term add or subtract?
-    int             type;
-    Token           identifier;
-
-    struct DtNode*  next;
-    struct DtNode*  children;
-} DtNode;
-
-
-// Analysis
+// 
+// Compile-time analysis.
+//
 
 enum {
     DT_PS_NONE, // error, probably.
@@ -242,50 +196,6 @@ typedef struct {
     MapHead                 map_head;
 } DtParserFunctions;
 
-#define DTP_FUNCTION_SYMBOLS_STARTING_CAPACITY 256
-
-
-bool dtp_validate_function(DtParserFunctions* map, DtParserFunctionSymbol s);
-void dtp_free_function_symbols(DtParserFunctions* s);
-DtParserFunctions dtp_init_function_symbols(void);
-
-
-
-typedef struct {
-    StringBuilder   output;
-    FILE*           tracef; // same as in `DtInterpreter`
-    FILE*           errorf; // same as in `DtInterpreter`
-
-    size_t      current;
-    size_t      requested_tokens,
-                parsed_tokens;
-    // we buffer PTBS(size) of tokens to be able 
-    // to lookup tokens before and after the current one
-    Tokenizer   lexer;
-    Token       current_token;
-    Token       token_buffer
-                    [PARSER_TOKEN_BUFFER_SIZE];
-    
-    DtParserFunctions   function_symbols;
-    Arena               allocator;
-} DtParser;
-
-
-
-
-
-#ifdef PARSER_TRACE
-#define dtp_trace_recursion(p, name, depth, ...) if(p->tracef) {\
-        fprintf(p->tracef, "%*.s> %s", depth, "\t", name);\
-        fprintf(p->tracef, ""__VA_ARGS__);\
-        fprintf(p->tracef, "\n");\
-}
-#else
-#define dtc_trace_recursion(name,depth, ...) /* __VA_ARGS__ */
-#endif
-
-
-
 typedef enum {
     DT_PNKIND_ERROR,
     DT_PNKIND_OK,
@@ -305,23 +215,39 @@ typedef struct {
     } as;
 } DtParseResult;
 
-DtParseResult dtp_error(void) {
-    const DtParseResult r = {0}; return r;
-}
 
-bool dtp_is_ok(DtParseResult r) { return r.kind >= DT_PNKIND_OK; };
 
-DtParseResult dtp_ok(void) {
-    const DtParseResult r = {.kind = DT_PNKIND_OK }; return r;
-}
-
-#define dtp_ok_or_return(e)\
-    if (!dtp_is_ok(e)) return e; 
+bool dtp_validate_function(DtParserFunctions* map, DtParserFunctionSymbol s);
+void dtp_free_function_symbols(DtParserFunctions* s);
+DtParserFunctions dtp_init_function_symbols(void);
 
 
 
-String string_alloc_to_arena(Arena* allocator, String it);
+typedef struct {
+    int             options_mirror; // mirror of options from interpreter.
+    StringBuilder   output;
+    FILE*           tracef; // for tracing AST parsing in recursion.
+    FILE*           errorf; // for logging errors from compilation.
+
+    size_t      current;
+    size_t      requested_tokens,
+                parsed_tokens;
+    // we buffer PTBS(size) of tokens to be able 
+    // to lookup tokens before and after the current one
+    Tokenizer   lexer;
+    Token       current_token;
+    Token       token_buffer
+                    [PARSER_TOKEN_BUFFER_SIZE];
+    
+    DtParserFunctions   function_symbols;
+    Arena               allocator;
+} DtParser;
 
 
+
+
+bool            dtp_is_ok(DtParseResult r);
+DtParseResult   dtp_ok(void);
+DtParseResult   dtp_error(void);
 
 #endif  //_DT_COMPILER_DECLARATIONS
