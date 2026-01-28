@@ -152,6 +152,7 @@ typedef enum {
     TI_COMPARISON_LESS,
     TI_COMPARISON_GREATER_EQUAL,
     TI_COMPARISON_LESS_EQUAL,
+    TI_LIST_OPERATOR,
 } TokenId;
 
 typedef enum {

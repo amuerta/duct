@@ -8,6 +8,7 @@ Tokenizer DtTokenizer_init(const char* text, size_t len) {
     static char scratch_buffer[512];
 
     static TokenTableEntry token_table[] = {
+        { "$",   TI_LIST_OPERATOR},
         { "==",  TI_COMPARISON_EQUAL},
         { "!=",  TI_COMPARISON_NOT_EQUAL},
         { ">=",  TI_COMPARISON_GREATER_EQUAL},
@@ -339,9 +340,6 @@ bool tkn_strcmp(Token t, const char* cmp) {
     return tkn_strncmp(t, cmp, strlen(cmp));
 }
 
-
-
-
 const int PARENT_IS_EXPR = 1;
 
 DtParseResult dtp_expression              (DtParser* p, int depth) ;
@@ -351,6 +349,7 @@ DtParseResult dtp_function_declaration    (DtParser* p, int depth) ;
 DtParseResult dtp_function_call           (DtParser* p, int depth, bool parent_is_expression) ;
 DtParseResult dtp_statement               (DtParser* p, int depth) ;
 DtParseResult dtp_if_statement            (DtParser* p, int depth) ;
+DtParseResult dtp_while_statement         (DtParser* p, int depth) ;
 DtParseResult dtp_block                   (DtParser* p, int depth, bool step_at_last) ;
 
 DtParseResult dtp_comparison  (DtParser*, int);
@@ -365,25 +364,81 @@ const char* dtp_unique_label(void) {
     static int counter;
     static char temp_buffer[256];
     memset(temp_buffer, 0, sizeof(temp_buffer));
-    sprintf(temp_buffer, "iflabel%06i", counter++);
+    sprintf(temp_buffer, "label%06i", counter++);
     return temp_buffer;
 }
 
-// TODO: FIX DIRTY HACKS HERE
+// TODO: FIX DIRTY INSTRUCTION GENERATION HACKS HERE
+DtParseResult dtp_while_statement(DtParser* p, int depth) {
+    StringBuilder* sb = &(p->output);
+    DtParseResult other_res = dtp_ok(),
+                  this_res  = dtp_ok();
+    dtp_trace_recursion(p, "while:", depth);
+
+    Token keyword = dtp_step(p);
+    dtp_expect_str(p, keyword, "while", "Expected while keyword");
+    
+    // label at zero-th location is not allowed, so 
+    // just pad with nop
+    sb_appendf(sb, "\tnop\n");
+    this_res.instructions_generated++;
+
+    // set the label
+    char label[256] = {0};
+    memcpy(label, dtp_unique_label(), sizeof(label));
+    sb_appendf(sb, "\t@%s\n", label);
+
+    size_t block_instructions = 0;
+
+    // while expression
+    dtp_ok_or_abort(other_res = dtp_expression(p, depth + 1));
+    this_res.instructions_generated += other_res.instructions_generated;
+
+    // TODO: fix this non-sense
+    // allocate instruction for jump
+    const char* padding = "      ";
+    size_t assembly_address_text_pen = 0;
+    sb_appendf(sb, "\tijif ", padding);
+    assembly_address_text_pen = sb->count;
+    sb_appendf(sb, "%s \n", padding);
+    this_res.instructions_generated++;
+
+    // pop condition result
+    sb_appendf(sb, "\tpop\n"); 
+    block_instructions++;
+    this_res.instructions_generated++;
+
+    // block
+    dtp_ok_or_abort(other_res = dtp_block(p, depth + 1, true));
+    this_res.instructions_generated += other_res.instructions_generated;
+    block_instructions += other_res.instructions_generated;
+
+    char* addr = sb->items + assembly_address_text_pen;
+    block_instructions++;
+    int n = snprintf(addr, strlen(padding)-1, "%lu", block_instructions);
+    addr[n] = ' ';
+
+    sb_appendf(sb, "\tjmp %s\n", label);
+    this_res.instructions_generated++;
+
+    return this_res;
+} 
+
+// TODO: FIX DIRTY INSTRUCTION GENERATION HACKS HERE
 DtParseResult dtp_if_statement            (DtParser* p, int depth)  {
     enum { 
         BRANCH_IF,
         BRANCH_ELIF, 
         BRANCH_ELSE, 
     } branch_type = BRANCH_IF;
-    dtp_trace_recursion(p, "statement:", depth);
+    dtp_trace_recursion(p, "if:", depth);
 
     StringBuilder* sb = &(p->output);
     DtParseResult other_res = dtp_ok(),
                   this_res  = dtp_ok();
     size_t additional_instructions = 0;
 
-    char label[256];
+    char label[256] = {0};
     memcpy(label, dtp_unique_label(), sizeof(label));
 
 parse_branch_again: ;
@@ -435,7 +490,6 @@ parse_branch_again: ;
     }
 
     // __asm__("int3");
-
 
     // block
     dtp_ok_or_abort(other_res = dtp_block(p, depth + 1, true));
@@ -497,13 +551,26 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
         // return self;
     } 
 
-    // if
+    //
+    // BRANCHING:
+    //
+    // + if
     else if(dtp_match_str(dtp_ahead(p),"if")) {
         dtp_ok_or_abort(other_res = dtp_if_statement(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
         // return self;
     }
 
+
+    //
+    // LOOPS:
+    //
+    // + while
+    else if(dtp_match_str(dtp_ahead(p),"while")) {
+        dtp_ok_or_abort(other_res = dtp_while_statement(p, depth + 1));
+        this_res.instructions_generated += other_res.instructions_generated;
+        // return self;
+    }
 
     /*
     else if (dtp_match_sym(dtp_ahead(p), '{')) {
@@ -520,6 +587,11 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
         dtp_step(p);
         dtp_ok_or_abort(other_res = dtp_function_call(p, depth + 1, !PARENT_IS_EXPR));
         this_res.instructions_generated += other_res.instructions_generated;
+
+        // handle null return
+        sb_appendf(sb,"\tpop\n");
+        this_res.instructions_generated++;
+
         // return result;
     } 
 
@@ -1314,7 +1386,17 @@ DtParseResult dtp_expression(DtParser* p, int depth) {
     return this_res;
 }
 
+DtParseResult dtp_list(DtParser *p, int depth);
+DtParseResult dtp_array(DtParser *p, int depth);
 
+DtParseResult dtp_list(DtParser *p, int depth) {
+    DtParseResult this_res  = dtp_ok(),
+                  other_res = dtp_ok();
+    dtp_trace_recursion(p, "list ", depth);
+    dtp_expect_sym (p, dtp_step(p), '$', "Expected '$'");
+    dtp_ok_or_abort(this_res = dtp_array(p, depth + 1));
+    return this_res;
+}
 
 DtParseResult dtp_array(DtParser *p, int depth) {
 
@@ -1344,16 +1426,20 @@ dtp_array_next:;
             if (dtp_match_sym(dtp_ahead(p), ',')) {
                 dtp_step(p);
                 goto dtp_array_next;
-            }             
+            } else if (
+                    dtp_match_sym(dtp_ahead(p), '$') |
+                    dtp_match_sym(dtp_ahead(p), '[') |
+                    dtp_match_sym(dtp_ahead(p), '{')
+            ) {
+                dtp_rvalue(p, depth + 1);
+                goto dtp_array_next;
+            }
+
             break;
 
         default: assert(0); break;
     }
-
     dtp_expect_sym(p, dtp_step(p), ']', "Expected ']' at the end of the array.");
-
-    // self->kind = NK_ARRAY;
-
     return dtp_ok();
 }
 
@@ -1412,11 +1498,19 @@ DtParseResult dtp_rvalue(DtParser* p, int depth) {
         case TOKEN_KIND_WORD:
             {
                 Token ahead = dtp_ahead(p);
+                // array
                 if (dtp_match_sym(ahead, '[')) {
                     dtp_array(p, depth + 1);
                     // if ((node = dtp_array(p, depth + 1)))
                     //     dtp_node_append(self, node);
-                } else if (dtp_match_sym(ahead,'{')) {
+                } 
+
+                // list
+                else if (dtp_match_sym(ahead, '$')) {
+                    dtp_list(p, depth + 1);
+                } 
+
+                else if (dtp_match_sym(ahead,'{')) {
                     dtp_object(p, depth + 1);
                     // if ((node = dtp_object(p, depth + 1))) {
                     //     dtp_node_append(self, node);

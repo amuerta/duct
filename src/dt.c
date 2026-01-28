@@ -1,4 +1,3 @@
-#define PARSER_TRACE  
 #include <stdio.h>
 #include "compiler/dtc.h"
 #include "vm/dtvm.h"
@@ -11,6 +10,7 @@
 typedef struct {
     DtParser        parser;
     Dtvm            vm;
+    bool            have_set_trace_file;
     FILE            *tracef,
                     *errorf;
     FILE    *trace_vm_execution_f,
@@ -21,13 +21,17 @@ typedef struct {
     FILE *outputf;
 } DtInterpreter;
 
-void dt__prepare_parser(DtInterpreter* itrp) {
-    itrp->parser.function_symbols = dtp_init_function_symbols();
-    itrp->parser.tracef = itrp->trace_compiler_ast_f; 
+void dt__prepare_parser(DtInterpreter* interpreter) {
+    if(interpreter->have_set_trace_file) return;
+
+    interpreter->parser.function_symbols = dtp_init_function_symbols();
+    interpreter->parser.tracef = interpreter->trace_compiler_ast_f; 
 }
 
 void dt__prepare_vm(DtInterpreter* interpreter) {
     Dtvm* vm = &(interpreter->vm);
+
+    if(interpreter->have_set_trace_file) return;
 
     interpreter->vm.writef     = interpreter->outputf; 
     interpreter->vm.tracef     = interpreter->trace_vm_execution_f; 
@@ -48,6 +52,13 @@ void dt__prepare_vm(DtInterpreter* interpreter) {
     }
 }
 
+void dt_prepare(DtInterpreter* interpreter) {
+    if(!interpreter->have_set_trace_file) {
+        dt__prepare_parser(interpreter);
+        dt__prepare_vm(interpreter);
+    }
+}
+
 bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* source, size_t length) {
     bool result = true;
     DtInterpreter* itrp = interpreter;
@@ -55,8 +66,6 @@ bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* sou
     
     parser->lexer           = DtTokenizer_init(source, length);
     parser->options_mirror  = itrp->options;
-    // DtNode* root = dtp_parse(&c->parser, 0);
-    
     
     // check for initilized trace file.
     if(dti_opt(*interpreter, DT_OPT_TRACE_COMPILER_AST_WALKING)) {
@@ -101,8 +110,7 @@ void dt_run_reset(DtInterpreter* interpreter, const char* entry_point) {
 void dt_compile(DtInterpreter* interpreter, const char* source) {
     DtInterpreter*  itrp    = interpreter;
     Dtvm*           vm      = &(itrp->vm);
-    dt__prepare_parser(interpreter);
-    dt__prepare_vm(interpreter);
+    dt_prepare(interpreter);
     dt_compile_assembly_from_string(interpreter, source, strlen(source));
     String assembly = {
         itrp->parser.output.items,
@@ -127,6 +135,7 @@ void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
 }
 
 void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
+    dt_prepare(inter);
     dtvm_compile_from_asm(&(inter->vm), str_make(assembly));
 }
 
@@ -162,12 +171,23 @@ int main(void) {
         .options = 0 
             // | DT_OPT_EXPECT_INITILIZED_STREAM_FILES
             // | DT_OPT_TRACE_VM_EXECUTION               
-            | DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION    
+            // | DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION    
             | DT_OPT_TRACE_COMPILER_AST_WALKING       
         ,
         .tracef  = stderr,
         .outputf = stdout,
     };
+
+    
+    const char* source = str_multiline(
+        main() {
+            i = 0
+            while i < 10 {
+                write(i)
+                i=i+1
+            }
+        }
+    );
 
     // const char* source = str_multiline(
     //         main() {
@@ -181,15 +201,7 @@ int main(void) {
     //         }
     // );
 
-    const char* source = str_multiline(
-        add(l,r) {
-            return l + r
-        }
-        main() {
-            write(add(1,2))
-        }
-    );
-
+    //
     // const char* source = str_multiline(
     //         rec(i,n) {
     //             if i < n { return rec(i+1,n) } else { return i }
@@ -221,9 +233,9 @@ int main(void) {
             "endfn\n"
     );
     // dt_compile(&interp, source);
+    // dt_reset(&interp);
     dt_compile_run_reset(&interp, source);
     // dt_run_reset(&interp, "main");
-    // dt_reset(&interp);
 
     // printf("\n");
     // TODO: check for empty file

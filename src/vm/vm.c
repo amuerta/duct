@@ -52,18 +52,15 @@ void objectmap_print_values(ObjectMap m) {
 
 void dtvm_print_stack(Dtvm *vm) {
     Object* stack = vm->stack;
-    Object* iter = stack;
-    if(vm->tracef) for(size_t i = 0;  
-            i < vm->sp && 
-            i < DTVM_STACK_CAPACITY && 
-            iter->type; 
-        i++, iter++) 
-    {
-       fprintf(vm->tracef,"%06lu\t", i);
-       fprintf(vm->tracef,"$%.*s,\t", str_fmt(iter->id));
-       fprintf(vm->tracef,"%s;", object_to_string(*iter));
-       fprintf(vm->tracef,"\n");
-    }
+    if(vm->tracef) 
+        for(size_t i = 0;  i < vm->sp && i < DTVM_STACK_CAPACITY; i++)
+        {
+            Object* iter = stack + i;
+            fprintf(vm->tracef,"%06lu\t", i);
+            fprintf(vm->tracef,"$%.*s,\t", str_fmt(iter->id));
+            fprintf(vm->tracef,"%s;", object_to_string(*iter));
+            fprintf(vm->tracef,"\n");
+        }
 }
 
 //
@@ -354,7 +351,7 @@ Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
                 
                 Object ret = dtvm_call(vm, id, fn_args, fn->argc);
                 
-                vm->sp = prev_sp + 1;
+                vm->sp = prev_sp;
                 dtvm_push(vm,ret);
 
                 // printf("call to %.*s\n", str_fmt(id));
