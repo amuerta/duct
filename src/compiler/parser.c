@@ -351,6 +351,7 @@ DtParseResult dtp_statement               (DtParser* p, int depth) ;
 DtParseResult dtp_if_statement            (DtParser* p, int depth) ;
 DtParseResult dtp_while_statement         (DtParser* p, int depth) ;
 DtParseResult dtp_block                   (DtParser* p, int depth, bool step_at_last) ;
+void          dtp_optional_semicolon      (DtParser* p);
 
 DtParseResult dtp_comparison  (DtParser*, int);
 DtParseResult dtp_equality    (DtParser*, int);
@@ -367,6 +368,16 @@ const char* dtp_unique_label(void) {
     sprintf(temp_buffer, "label%06i", counter++);
     return temp_buffer;
 }
+
+void dtp_optional_semicolon(DtParser* p) {
+try_semicolon_again: ;
+    Token next = dtp_ahead(p);
+    if(dtp_match_sym(next, ';')) {
+        dtp_step(p);
+        goto try_semicolon_again;
+    }
+}
+
 
 // TODO: FIX DIRTY INSTRUCTION GENERATION HACKS HERE
 DtParseResult dtp_while_statement(DtParser* p, int depth) {
@@ -592,6 +603,7 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
         sb_appendf(sb,"\tpop\n");
         this_res.instructions_generated++;
 
+        dtp_optional_semicolon(p);
         // return result;
     } 
 
@@ -600,6 +612,8 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
         Token before = p->current_token;//dtp_ahead(p);
         dtp_ok_or_abort(other_res = dtp_variable(p, depth + 1));
         this_res.instructions_generated += other_res.instructions_generated;
+        
+        dtp_optional_semicolon(p);
         // return self;
     }
     return this_res;
@@ -820,6 +834,7 @@ DtParseResult dtp_object(DtParser* p, int depth) {
     // DtNode* node = 0;
     Token ahead = {0};
 
+    dtp_trace_recursion(p, "object:", depth);
     // self->kind = NK_OBJECT;
     // self->source_location = p->current_token;
     dtp_expect_sym(p, dtp_step(p), '{', "Expected '{' for object opening");
@@ -1456,8 +1471,7 @@ DtParseResult dtp_variable(DtParser* p, int depth) {
     dtp_expect_kind (p, name, TOKEN_KIND_WORD, "EXPECTED word");
     dtp_expect_sym  (p, dtp_step(p), '=', "Expected '='");
     
-
-    dtp_trace_recursion(p, "variable",depth, "%s", token_as_cstr(name));
+    dtp_trace_recursion(p, "variable", depth, " '%s'", token_as_cstr(name));
 
     // self = dtp_rvalue(p, depth++);
     dtp_ok_or_abort(other_res = dtp_rvalue(p, depth++));
