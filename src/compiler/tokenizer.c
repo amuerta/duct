@@ -331,11 +331,11 @@ const char* __tkn_temp_cstr(Token t, bitmask8_t print_flags) {
 }
 
 
-
 TknSlice tkn_as_slice(Token t) {
     assert(t.kind == TOKEN_KIND_WORD || t.kind == TOKEN_KIND_LITERALL_STRING);
     return t.data.as_word;
 }
+
 const char* token_as_cstr(Token t)  {
     static char temp[DT_SCRATCH_BUFFER_SIZE];
     memset(temp, 0, sizeof(temp));

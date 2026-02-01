@@ -2,9 +2,9 @@ build:
 	clang -o main ./src/dt.c\
 		-ggdb\
 		-std=c99\
+		# -fsanitize=address 
 		# -pedantic
 	# -Wall -Wextra 
-	# -fsanitize=address 
 	# last cheked Wed 13 22:22
 
 loc:

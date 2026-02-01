@@ -180,8 +180,15 @@ int main(void) {
 
     
     const char* source = str_multiline(
+        add(l,r) {
+            return l + r;
+        }
         main() {
-            i = 0
+            n = -((1 + 11 * 21) - 11)
+            n = -1001
+            write(n)
+
+            i = add(1,0)
             while i < 10 {
                 write(i)
                 i=i+1

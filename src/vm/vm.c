@@ -146,7 +146,12 @@ Object object_store(Object* ref, Object value) {
         }
     }
     else switch(ref->type) {
-       
+ 
+        // TODO: FIX BUG WHEN DOING LOOPING WITH THIS ONE
+        case OT_BOOL: if (value.type == OT_BOOL)
+                      ref->as.b = value.as.b;   else
+                      return object_result();    break;
+
         case OT_BYTE: if (value.type == OT_BYTE)
                       ref->as.b = value.as.b;   else
                       return object_result();    break;
