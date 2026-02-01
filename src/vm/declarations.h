@@ -11,15 +11,20 @@
 /*  ENUMS   */
 
 typedef enum {
-    OT_NULL, // should be an error if encountered. NULL's are bad.
-    OT_BOOL,
-    OT_BYTE,
-    OT_CHAR,
-    OT_INT,
-    OT_FLOAT,
-    OT_STRING,
-    OT_TYPE,
-    OT_RESULT, 
+    OT_NULL = 0, // should be an error if encountered. NULL's are bad.
+    OT_BOOL     = 1,
+    OT_BYTE     = 2,
+    OT_CHAR     = 3,
+    OT_INT      = 4,
+    OT_FLOAT    = 5,
+    OT_CHARACTER= 6,
+    OT_STRING   = 7,
+    OT_TYPE     = 8,
+    OT_RESULT   = 10, 
+
+    OT_IS_ARRAY     = (1<<4),
+    OT_IS_LIST      = (1<<5),
+    OT_IS_OBJECT    = (1<<6),
 } EObjectType;
 
 // VM
@@ -90,6 +95,10 @@ static String  STRING_NULL = {0};
 
 // STRUCTS //
 
+struct DtList  ;
+struct DtArray ;
+struct Object  ;
+
 typedef struct {
     String  name;
     long    address;
@@ -100,10 +109,20 @@ typedef struct {
     size_t count, capacity, typesize;
 } Labels;
 
+typedef struct DtArray {
+    void*  items;
+    size_t count, capacity, typesize;
+} DtArray;
+
+typedef struct DtList {
+    struct Object *next, *prev, *tail;
+} DtList;
+
 // OBJECT(s)
 typedef int Result;
 typedef struct Object {
     String   id;
+    byte    properties;
     int     type;
     union {
         bool            B;
@@ -112,6 +131,9 @@ typedef struct Object {
         float           f;
         Result          r;
         String          s; // read only string
+        DtArray         A;
+        DtList          L;
+        struct Object  *O;
         EObjectType     T; // object type
     } as;
 } Object;
@@ -227,7 +249,7 @@ bool     string_cmp(String l, String r);
 static inline Object object_byte(char c);
 static inline Object object_int(int i);
 static inline Object object_float(float f);
-
+static inline Object object_string(String s);
 
 Object*     object_get  (ObjectMap* map, String id);
 Object      object_store(Object* ref, Object value);

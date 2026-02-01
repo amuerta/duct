@@ -47,4 +47,63 @@ String string_alloc_to_arena(Arena* allocator, String it) {
     return moved;
 }
 
+
+long tkn_parse_string(
+        const char* str, size_t length, 
+        char* out, size_t* written,
+        const char string_quote_character) 
+{
+    enum { PARSE_STRING_OPEN, PARSE_STRING_CLOSE };
+
+    bool reached_string_end = false;
+    size_t walked           = 0;
+    if(written) *written    = 0;
+    size_t string_count     = strlen(str);
+    bool parsing_string     = false;
+    
+    for(size_t i = 0; i < length; i++) {
+        char current = str[i];
+        char out_char = 0;
+
+        if (!parsing_string && current == string_quote_character) {
+            parsing_string = true;
+            walked++;
+            continue;
+        }
+
+        if(parsing_string) {
+            // check escape code.
+            if(current == '\\') {
+                i++;
+                walked++;
+                current = str[i];
+                switch (current) {
+                    case 'n':  out_char = '\n'; break;
+                    case 't':  out_char = '\t'; break;
+                    case 'r':  out_char = '\r'; break;
+                    case '0':  out_char = '\0'; break;
+                    case '\\': out_char = '\\'; break;
+                    case '\'': out_char = '\''; break;
+                    case '"':  out_char = '"';  break;
+                    default: return -1;
+                }
+            }
+            else if (current == string_quote_character) {
+                parsing_string = false;
+                walked++;
+                break;
+            }
+            // after check if character was escaped, if not use current one
+            // to write to out;
+
+            if(out) 
+                out[(*written)] = out_char ? out_char : current;
+            if(written) (*written)++;
+        }
+
+        walked++;
+    }
+    return walked;
+}
+
 #endif // __DT_SHARED_H

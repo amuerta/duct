@@ -158,6 +158,7 @@ void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
 // - make example interpreter emmit assembly of the code.
 // - push string literalls and manage memory for them.
 
+
 int main(void) {
     // const char* file = "./examples/parsing_00.dt";
     // char* txt = dt_load_file(file);
@@ -171,25 +172,24 @@ int main(void) {
         .options = 0 
             // | DT_OPT_EXPECT_INITILIZED_STREAM_FILES
             // | DT_OPT_TRACE_VM_EXECUTION               
-            // | DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION    
+            | DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION    
             | DT_OPT_TRACE_COMPILER_AST_WALKING       
         ,
         .tracef  = stderr,
         .outputf = stdout,
     };
 
+    // const char* source = str_multiline(
+    //     main() {
+    //         write("hello world\n")
+    //     }
+    // );
     
     const char* source = str_multiline(
-        add(l,r) {
-            return l + r;
-        }
         main() {
-            n = -((1 + 11 * 21) - 11)
-            n = -1001
-            write(n)
-
-            i = add(1,0)
+            i = 0
             while i < 10 {
+                write("\n")
                 write(i)
                 i=i+1
             }
@@ -216,6 +216,8 @@ int main(void) {
     //         main() { write(rec(0,5)) }
     // );
 
+
+
     // dt_append_assembly(&interp, 
     //         "fn add l r\n"
     //             "load l\n"
@@ -229,6 +231,15 @@ int main(void) {
     //             "push 22\n"
     //             "call add\n"
     //             "call write\n"
+    //         "endfn\n"
+    // );
+
+
+    // dt_append_assembly(&interp, 
+    //         "fn main\n"
+    //             "push \"hello world!\"\n"
+    //             "wrt\n"
+    //             "pop\n"
     //         "endfn\n"
     // );
 

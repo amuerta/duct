@@ -381,6 +381,7 @@ const char* token_as_cstr(Token t)  {
     return temp;
 }
 
+
 Token Tokenizer_next_token(Tokenizer* t) {
 	Token 	result = {0};
 	index_t table_i = INVALID_INDEX;

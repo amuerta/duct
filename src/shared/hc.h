@@ -657,9 +657,9 @@ MapHead hc_map_heap(size_t cap, size_t typesize) {
 }
 
 void hc_map_clear(MapHead* m) {
-    m->count = 0;
-    m->capacity = 0;
     memset(m->keys, 0, sizeof(*(m->keys)) * m->capacity);
+    m->count = 0;
+    // m->capacity = 0;
 }
 
 void hc_map_heap_free(MapHead* m) {

@@ -71,10 +71,11 @@ const char* dtvm_decompile_instruction(Instruction i) {
         case DTI_PUSH:
              sb_appendf(&sb, "push"); 
              switch(i.as.push.object.type) {
-                 case OT_INT:   sb_appendf(&sb, " i.%i", i.as.push.object.as.i); break;
-                 case OT_BYTE:  sb_appendf(&sb, " b.%i", i.as.push.object.as.i); break;
-                 case OT_FLOAT: sb_appendf(&sb, " f.%f", i.as.push.object.as.f); break;
-                 case OT_BOOL:  sb_appendf(&sb, " B.%s", i.as.push.object.as.B ? "true" : "false"); break;
+                 case OT_INT:   sb_appendf(&sb, " i.%i",    i.as.push.object.as.i); break;
+                 case OT_BYTE:  sb_appendf(&sb, " b.%i",    i.as.push.object.as.i); break;
+                 case OT_FLOAT: sb_appendf(&sb, " f.%f",    i.as.push.object.as.f); break;
+                 case OT_BOOL:  sb_appendf(&sb, " B.%s",    i.as.push.object.as.B ? "true" : "false"); break;
+                 case OT_STRING:sb_appendf(&sb, " s(%.*s)",  str_fmt(i.as.push.object.as.s)); break;
              }
              break;
 
@@ -173,7 +174,8 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
     String l = line;
     String 
         type = {0}, operand = {0},
-        inst_str = split_next(&l);
+        inst_str = split_next(&l),
+        leftover = {0};
 
     LineResult  result  = {0};
     Instruction inst    = {0};
@@ -206,7 +208,8 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
 
     else if(match(inst_str, "push")) {
         inst.kind = DTI_PUSH;
-        operand = split_next(&l);
+        leftover = l;
+        operand  = split_next(&l);
         int     n   = 0;
         float   nf  = 0;
         
@@ -222,10 +225,28 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
         else if (str_is_float(operand)) {
             nf = string_to_float(operand);
             inst.as.push.object = object_float(nf);
-        } 
+        } else { // must be string literall
+
+            size_t n = tkn_parse_string(operand.ptr, operand.len, NULL, NULL, '\"');
+            if(!n || n == -1) {
+                *status = DTSTAT_INVALID_OPERAND_TYPE;
+            } else {
+                char* str     = arena_alloc(allocator, n);
+                size_t written_size = 0;
+
+                tkn_parse_string(leftover.ptr, leftover.len, str, &written_size, '\"');
+                String parsed_string = {
+                    .ptr = str, .len = written_size
+                };
+
+                inst.as.push.object = object_string(parsed_string);
+            }
 
 
-        else *status = DTSTAT_INVALID_OPERAND_TYPE;
+            //else 
+        }
+
+
     } 
 
     else if (
@@ -494,6 +515,12 @@ Function dtvm_function_pack(String name,  Instructions* code, String* argv, size
             case DTI_CALL:
                 symbols_count += ins.as.store.ident.len;
                 break;
+            case DTI_PUSH:
+                {
+                    Object it = ins.as.push.object;
+                    if(it.type == OT_STRING)
+                        symbols_count += it.as.s.len;
+                } break;
         }
     }
     instruction_symbol_count = symbols_count;
@@ -538,18 +565,34 @@ Function dtvm_function_pack(String name,  Instructions* code, String* argv, size
         switch (ins.kind) {
             case DTI_LOAD: 
             case DTI_STORE: 
-            case DTI_CALL: {
-                // move memory
-                String ident = ins.as.load.ident;
-                void* dest = (symbols_section + offset);
-                memcpy(dest, ident.ptr, ident.len);
-                // update offets
-                offset += ident.len;
-                // push new ident in place of the old one
-                String new_ident = {dest, ident.len};
-                insp->as.load.ident = new_ident;
-                break;
-            }
+            case DTI_CALL: 
+                {
+                    // move memory
+                    String ident = ins.as.load.ident;
+                    void* dest = (symbols_section + offset);
+                    memcpy(dest, ident.ptr, ident.len);
+                    // update offets
+                    offset += ident.len;
+                    // push new ident in place of the old one
+                    String new_ident = {dest, ident.len};
+                    insp->as.load.ident = new_ident;
+                    break;
+                }
+
+            case DTI_PUSH:
+                {   
+                    Object it = ins.as.push.object;
+                    if(it.type == OT_STRING) {
+                        String str = it.as.s;
+                        void* dest = (symbols_section + offset);
+                        memcpy(dest, str.ptr, str.len);
+                        // update offset
+                        offset += str.len;
+                        // push new string in place of the old one
+                        String new_str              = {dest, str.len};
+                        insp->as.push.object.as.s   = new_str;
+                    }
+                } break;
         }
     }
 

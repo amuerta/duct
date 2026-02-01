@@ -27,10 +27,11 @@ const char* object_to_string(Object o) {
     memset(temp, 0, sizeof(temp));
     switch(o.type) {
         case OT_NULL:   snprintf(temp, 1024, "null");       break;
-        case OT_BOOL:   snprintf(temp, 1024, "%s", o.as.B ? "true" : "false"); break;
-        case OT_BYTE:   snprintf(temp, 1024, "%i", o.as.b); break;
-        case OT_INT:    snprintf(temp, 1024, "%i", o.as.i); break;
-        case OT_FLOAT:  snprintf(temp, 1024, "%f", o.as.f); break;
+        case OT_BOOL:   snprintf(temp, 1024, "%s",   o.as.B ? "true" : "false"); break;
+        case OT_BYTE:   snprintf(temp, 1024, "%i",   o.as.b); break;
+        case OT_INT:    snprintf(temp, 1024, "%i",   o.as.i); break;
+        case OT_FLOAT:  snprintf(temp, 1024, "%f",   o.as.f); break;
+        case OT_STRING: snprintf(temp, 1024, "\"%.*s\"", str_fmt(o.as.s)); break;
         default: 
                 UNREACHABLE("Unhandled object_to_string type: %i", o.type); 
     }
@@ -91,6 +92,10 @@ static inline Object object_float(float f) {
     return o;
 }
 
+static inline Object object_string(String s) {
+    Object o = {.type = OT_STRING, .as.s = s};
+    return o;
+}
 
 static inline Object object_type(EObjectType T) {
     Object e = {.type = OT_TYPE, .as.T = T};
@@ -301,6 +306,9 @@ void object_write(FILE* f, Object o) {
         case OT_FLOAT: 
             fprintf(f, "%f", o.as.f);
             break;
+        case OT_STRING: 
+            fprintf(f, "%.*s", str_fmt(o.as.s));
+            break;
 
         default: UNREACHABLE("object_write unaccepted input"); break;
     }
@@ -497,6 +505,11 @@ ObjectMap* dtvm_get_scope(Dtvm* vm) {
     return current;
 }
 
+void dtvm_clear_scope(ObjectMap* map) {
+    memset(map->items, 0, sizeof(*map->items) * map->map_head.capacity);
+    hc_map_clear(&(map->map_head));
+}
+
 void dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip) {
     if(vm->tracef) {
         fprintf(vm->tracef, "F:%04lu\t %06lu > %s\n", 
@@ -538,6 +551,8 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
         if (!object_is_null(result)) 
             return result;
     }
+
+    dtvm_clear_scope(scope);
     objectmap_print_values(*scope);
     //__asm__("int3");
 

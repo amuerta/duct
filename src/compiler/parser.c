@@ -221,33 +221,6 @@ bool dtp_match_sym(Token t,char sym) {
         t.data.as_symbol == sym;
 }
 
-bool is_space(char c) {
-    return c == '\t' || c == ' ';
-}
-
-Slice dtp_get_line(const char* source, int r) {
-    const char* line_end = 0;
-    int newl_count = 1;
-
-    while(newl_count != r && *source != 0) {
-        if (*source == '\n') newl_count++;
-        source++;
-    }
- 
-    // trim left
-    while(is_space(*source))
-        source++;
-
-    line_end = source;
-    while(*line_end != '\n' && *line_end != 0)
-        line_end++;
-
-    Slice s = {
-        .length = (line_end - source),
-        .data = (char*) source
-    }; 
-    return s;
-}
 
 void dtp_error_message(FILE* out, const char* message, int r, int c) {
     //Slice line = dtp_get_line(stat->source, r);
@@ -371,6 +344,7 @@ DtParseResult dtp_while_statement       (DtParser* p, int depth) ;
 DtParseResult dtp_list                  (DtParser *p, int depth);
 DtParseResult dtp_array                 (DtParser *p, int depth);
 void          dtp_optional_semicolon    (DtParser* p);
+DtParseResult dtp_dot_access            (DtParser* p, int depth, StringBuilder* sb);
 
 DtParseResult dtp_comparison  (DtParser*, int);
 DtParseResult dtp_equality    (DtParser*, int);
@@ -625,8 +599,9 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
              dtp_function_call(p, depth + 1, !PARENT_IS_EXPR));
         dtp_optional_semicolon(p);
 
-        // handle null return
+        // handle null return of function used outside of expression.
         dtp_emmit_asm(sb, this_res, "\tpop\n");
+        dtp_optional_semicolon(p);
     } 
 
     // variable
@@ -789,6 +764,25 @@ DtParseResult dtp_function_declaration(DtParser* p, int depth) {
         assert(0 && "function was already used with different signature");
 
     return dtp_ok();
+}
+
+DtParseResult dtp_dot_access(DtParser* p, int depth, StringBuilder* sb) {
+    DtParseResult this_res = dtp_ok();
+
+    Token name = p->current_token;
+
+access_dot_again:
+    dtp_expect_kind(p, name, TOKEN_KIND_WORD, "EXPECTED word");
+    sb_appendf(sb, "%.*s", tkn_fmt(tkn_as_slice(name)));
+
+    if(dtp_match_sym(dtp_ahead(p), '.')) {
+        dtp_step(p);
+        sb_appendf(sb, ".");
+        name = dtp_step(p);
+        goto access_dot_again;
+    }
+
+    return this_res;
 }
 
 DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expression) {
@@ -1276,7 +1270,6 @@ DtParseResult dtp_unary(DtParser* p, int depth) {
 }
 
 
-
 DtParseResult dtp_value(DtParser* p, int depth) {
     StringBuilder* sb = &p->output;
 
@@ -1299,6 +1292,7 @@ DtParseResult dtp_value(DtParser* p, int depth) {
             break;
 
         case TOKEN_KIND_LITERALL_STRING:
+            dtp_emmit_asm(sb, this_res, "\tpush \"%.*s\" \n", tkn_fmt(name.data.as_word))
             // self->kind         = NK_STRLIT;
             // self->identifier   = name;
             break;
@@ -1320,10 +1314,18 @@ DtParseResult dtp_value(DtParser* p, int depth) {
                     (this_res, other_res, 
                      dtp_function_call(p, depth + 1, PARENT_IS_EXPR));
             } 
+
             // else its variable
             else {
+                // TODO: use 
+                StringBuilder object_path = {0};
+                Token next = {0};
+
+                dtp_dot_access(p, depth + 1, &object_path);
+                // emmit load of variable and then generate access instruction
                 dtp_emmit_asm(sb, this_res, 
                         "\tload %.*s\n", tkn_fmt(tkn_as_slice(name))); 
+                free(object_path.items);
             }
             break;
 
@@ -1440,8 +1442,14 @@ DtParseResult dtp_variable(DtParser* p, int depth) {
     Token name = {0};
     //Token lhs = {0};
 
+    // TODO: use this
+    StringBuilder object_path = {0};
+
     name = dtp_step(p);
     dtp_expect_kind (p, name, TOKEN_KIND_WORD, "EXPECTED word");
+    dtp_dot_access(p, depth + 1, &object_path);
+    free(object_path.items);
+
     dtp_expect_sym  (p, dtp_step(p), '=', "Expected '='");
     
     dtp_trace_recursion(p, "variable", depth, " '%s'", token_as_cstr(name));
