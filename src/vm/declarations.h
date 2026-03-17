@@ -114,9 +114,12 @@ typedef struct DtArray {
     size_t count, capacity, typesize;
 } DtArray;
 
-typedef struct DtList {
-    struct Object *next, *prev, *tail;
-} DtList;
+typedef struct DtComplex {
+    struct Object 
+        *next, *prev, *tail,
+        *children
+    ;
+} DtComplex;
 
 // OBJECT(s)
 typedef int Result;
@@ -132,9 +135,8 @@ typedef struct Object {
         Result          r;
         String          s; // read only string
         DtArray         A;
-        DtList          L;
-        struct Object  *O;
-        EObjectType     T; // object type
+        DtComplex       C;
+        EObjectType     T; // object represents "Type"
     } as;
 } Object;
 
@@ -164,7 +166,7 @@ typedef struct Instruction {
         struct {
             size_t jumpto;
             String label; // never used in the actual vm, 
-                          // exists for 2 assembler pass only.
+                          // exists strictly for second assembler pass.
         } ijif, jmp;
     } as;
 } Instruction;
@@ -192,11 +194,10 @@ typedef struct Instructions {
 // all of the function data is stored.
 //
 // This way each function is self contained "piece" that
-// can be treated as single unit which either initilized, or not.
+// can be treated as single unit which either is valid, or not.
 typedef struct {
     String      id;
     String*     argv; size_t argc;
-    size_t ip;
 
     // owned memory, it has everything that function needs,
     // packed tightly in linear block of memory.
@@ -217,7 +218,7 @@ typedef struct {
     size_t count, capacity, typesize;
 } Strings;
 
-// WM
+// VM
 typedef struct {
     int             options_mirror; // mirror of options from interpreter.
 

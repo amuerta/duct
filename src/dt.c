@@ -75,6 +75,9 @@ bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* sou
     }
 
     dtp_parse(parser, 0);
+    fprintf(stderr, "GATHERED ASSEMBLY: ----\n%.*s\n----------\n",
+            sb_fmt(parser->output)
+    );
     //DtNode* root = dtp_block(&parser, 0, false);
     // dtp_print_ast(root, 0, stdout);
     arena_free(&itrp->parser.allocator);
@@ -189,8 +192,7 @@ int main(void) {
         main() {
             i = 0
             while i < 10 {
-                write("\n")
-                write(i)
+                print("number i : ", i, "\n");
                 i=i+1
             }
         }

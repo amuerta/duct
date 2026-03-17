@@ -12,15 +12,12 @@ DtParserFunctions dtp_init_function_symbols(void) {
     return map;
 }
 
-
 void dtp_free_function_symbols(DtParserFunctions* s) {
     assert(s->items);
     free(s->items);
     hc_map_heap_free(&(s->map_head));
     memset(s, 0, sizeof(*s));
 }
-
-
 
 bool dtp_validate_function(DtParserFunctions* map, DtParserFunctionSymbol s) {
     assert(hc_map_load(map->map_head) < 1.0); // handle this later

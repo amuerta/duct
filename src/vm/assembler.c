@@ -227,7 +227,11 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
             inst.as.push.object = object_float(nf);
         } else { // must be string literall
 
-            size_t n = tkn_parse_string(operand.ptr, operand.len, NULL, NULL, '\"');
+            // fprintf(stderr, "\t\tBEFORE: '%.*s':%li\n", (int)operand.len, operand.ptr, operand.len);
+            // fprintf(stderr, "\t\tLEFT: '%.*s':%li\n", (int)leftover.len, leftover.ptr, leftover.len);
+            // I should really remake this assembler with tokenize.h...
+            // NOTE: USE LEFTOVER NOT OPERAND!!
+            size_t n = tkn_parse_string(leftover.ptr, leftover.len, NULL, NULL, '\"');
             if(!n || n == -1) {
                 *status = DTSTAT_INVALID_OPERAND_TYPE;
             } else {
@@ -238,10 +242,10 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
                 String parsed_string = {
                     .ptr = str, .len = written_size
                 };
-
+                // fprintf(stderr, "\t\tAFTER: '%.*s':%li\n", (int)parsed_string.len, parsed_string.ptr, parsed_string.len);
+                // fprintf(stderr, "---------------------\n");
                 inst.as.push.object = object_string(parsed_string);
             }
-
 
             //else 
         }
@@ -518,8 +522,10 @@ Function dtvm_function_pack(String name,  Instructions* code, String* argv, size
             case DTI_PUSH:
                 {
                     Object it = ins.as.push.object;
-                    if(it.type == OT_STRING)
+                    if(it.type == OT_STRING) {
+                        // fprintf(stderr, "\t\tFOR STRING '%.*s' length is %lu\n",(int) it.as.s.len, it.as.s.ptr, it.as.s.len);
                         symbols_count += it.as.s.len;
+                    }
                 } break;
         }
     }

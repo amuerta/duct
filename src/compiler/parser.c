@@ -400,8 +400,9 @@ DtParseResult dtp_while_statement(DtParser* p, int depth) {
     // TODO: extract this non-sense into 
     // some single functions or multiple functions
     // that allocate instruction for jumps
-    const char* padding = "      ";
+    const char* padding = "        ";
     size_t assembly_address_text_pen = 0;
+
     sb_appendf(sb, "\tijif ", padding);
     assembly_address_text_pen = sb->count;
     sb_appendf(sb, "%s \n", padding);
@@ -599,9 +600,7 @@ DtParseResult dtp_statement(DtParser* p, int depth) {
              dtp_function_call(p, depth + 1, !PARENT_IS_EXPR));
         dtp_optional_semicolon(p);
 
-        // handle null return of function used outside of expression.
-        dtp_emmit_asm(sb, this_res, "\tpop\n");
-        dtp_optional_semicolon(p);
+        // dtp_optional_semicolon(p);
     } 
 
     // variable
@@ -798,11 +797,19 @@ DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expressio
     StringBuilder* sb = &(p->output);
     Token name = {0};
     size_t argc = 0;
+    enum {
+        BUILDIN_NOT_BUILD_IN,
+        BUILDIN_PRINT,
+    } buildin_function;
 
     dtp_expect_kind (p,p->current_token, TOKEN_KIND_WORD, "Expected word");
     name = p->current_token;
     dtp_trace_recursion(p, "fncall ", depth, "'%s'", token_as_cstr(name));
     
+    if(tkn_strcmp(name, "print")) {
+        buildin_function = BUILDIN_PRINT;
+    } 
+
     dtp_expect_sym  (p,dtp_step(p), '(', "Expected '('");
 
  dtp_array_next:;
@@ -815,19 +822,32 @@ DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expressio
         argc++;
         dtp_on_ok_register_result_or_abort
             (this_res, other_res, dtp_expression(p, depth+1));
+
+        if(buildin_function == BUILDIN_PRINT) {
+            dtp_emmit_asm(sb, this_res, "\twrt\n");
+            dtp_emmit_asm(sb, this_res, "\tpop\n");
+        }
+
         goto dtp_array_next;
     }
     
-    dtp_emmit_asm(sb, this_res, "\tcall %.*s\n", 
-            tkn_fmt(tkn_as_slice(name)));
 
-    // TODO: proper error logging.
-    DtParserFunctionSymbol fn_decl = {
-        .name = token_to_string(name),
-        .argc = argc,
-    };
-    if(!dtp_validate_function(&p->function_symbols, fn_decl)) 
-        assert(0 && "function was already defined with different signature");
+    if(!buildin_function) {
+        dtp_emmit_asm(sb, this_res, "\tcall %.*s\n", 
+                tkn_fmt(tkn_as_slice(name)));
+
+        // TODO: proper error logging.
+        DtParserFunctionSymbol fn_decl = {
+            .name = token_to_string(name),
+            .argc = argc,
+        };
+        if(!dtp_validate_function(&p->function_symbols, fn_decl)) 
+            assert(0 && "function was already defined with different signature");
+        if(!parent_is_expression) {
+            // handle null return of function used outside of expression.
+            dtp_emmit_asm(sb, this_res, "\tpop\n");
+        }
+    }
 
     dtp_expect_sym(p, dtp_step(p), ')', "Expected ')' at the end of the array.");
     return this_res;
