@@ -3,6 +3,58 @@
 #ifndef __DTVM_ASSEMBLER_H
 #define __DTVM_ASSEMBLER_H
 
+/*Assembler symbols get counted and replaced by direct access index used by vm to run things.*/
+typedef struct {
+    String identifier;
+    size_t id;
+} DtSymbol;
+
+typedef struct {
+    DtSymbol *items;
+    MapHead map_head;
+    size_t unique_symbols;
+} DtSymbolMap;
+
+#define DTA_SYMBOL_INVALID ((size_t) -1)
+#define DTA_SYMBOL_MAP_STARTING_CAPACITY 1024
+
+DtSymbolMap dta_init_symbol_map(void) {
+    const  size_t       cap         = DTA_SYMBOL_MAP_STARTING_CAPACITY;
+    const DtSymbolMap   reference   = {0};
+    DtSymbolMap         map         = {
+        .items      = calloc(sizeof(*reference.items), cap),
+        .map_head   = hc_map_heap(cap, sizeof(*reference.items))
+    };
+    hc_map_set_default_hashes(&map.map_head);
+    return map;
+}
+
+void dta_free_symbol_map(DtSymbolMap* s) {
+    assert(s->items);
+    free(s->items);
+    hc_map_heap_free(&(s->map_head));
+    memset(s, 0, sizeof(*s));
+}
+
+size_t dta_get_symbol_or_save(DtSymbolMap* map, String identifier) {
+    assert(hc_map_load(map->map_head) < 1.0); // handle this later
+    String id = identifier;
+    DtSymbol* sym =
+        hc_map_get_or_reserve(
+            map, 
+            hc_map_slice(id.ptr, id.len));
+    // fn is always not null, but to be sure - assert.
+    assert(sym);
+    if(str_is_empty(sym->identifier)) {
+        sym->identifier = identifier;
+        sym->id = map->unique_symbols++;
+    }
+    return sym->id;
+}
+
+//
+//
+//
 
 void dtvm_instructions_free(Instructions* code) {
     if(code->items) free(code->items);
@@ -80,11 +132,11 @@ const char* dtvm_decompile_instruction(Instruction i) {
              break;
 
         case DTI_LOAD:
-             sb_appendf(&sb, "load %.*s", str_fmt(i.as.load.ident));
+             sb_appendf(&sb, "load %.*s@%lu", str_fmt(i.as.load.ident), i.as.store.id);
              break;
 
         case DTI_STORE:
-             sb_appendf(&sb, "store %.*s", str_fmt(i.as.store.ident));
+             sb_appendf(&sb, "store %.*s@%lu", str_fmt(i.as.store.ident), i.as.store.id);
              break;
 
         case DTI_CALL:
@@ -167,7 +219,7 @@ const char* dtvm_decompile_instruction(Instruction i) {
 
 // TODO: all symbol slices and other string data is stored
 // in special linear memory (string builder)
-LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) {
+LineResult dtvm_compile_instruction(Arena* allocator, DtSymbolMap* symbols,  String line, int* status) {
     #define split_next(L) str_split_by_chars(L, " ")
     #define match(STR, CSTR) str_cmp_cstr(STR, CSTR)
     
@@ -259,13 +311,17 @@ LineResult dtvm_compile_instruction(Arena* allocator, String line, int* status) 
             match(inst_str, "call")     
             ) {
 
+        bool is_function = false;
         if (match(inst_str, "load"))    inst.kind = DTI_LOAD;
         if (match(inst_str, "store"))   inst.kind = DTI_STORE;
-        if (match(inst_str, "call"))    inst.kind = DTI_CALL;
+        if (match(inst_str, "call"))    inst.kind = DTI_CALL, is_function = true;
+        
         operand = split_next(&l);
         if(str_is_empty(operand)) 
             *status = DTSTAT_NO_OPERAND;
         inst.as.store.ident = operand;
+        if(!is_function)
+            inst.as.store.id = dta_get_symbol_or_save(symbols, operand);
     }
 
 
@@ -363,6 +419,7 @@ end:
 String dtvm_bytecode_compile(
         FILE* trace_file,
         Arena* allocator, 
+        DtSymbolMap* symbols,
         Instructions* code, 
         String source, 
         String* out_name,
@@ -381,7 +438,7 @@ String dtvm_bytecode_compile(
         line = str_split_by_chars(&all, "\n\r");
         line = str_trim(line);
         if(str_is_empty(line)) continue;
-        LineResult result = dtvm_compile_instruction(allocator, line, &stat);
+        LineResult result = dtvm_compile_instruction(allocator, symbols, line, &stat);
         
         if (stat == DTSTAT_START_FUNCTION) {
             leftover = all;
@@ -399,6 +456,7 @@ String dtvm_bytecode_compile(
                 fn_arg = str_split_by_chars(&line, " ");
                 if (!str_is_empty(fn_arg)) {
                     assert(string_is_identifier(fn_name) && "expected to have identifier-like argument name");
+                    dta_get_symbol_or_save(symbols, fn_arg);
                     da_append(out_args, fn_arg);
                     args++;
                 }
@@ -640,12 +698,15 @@ void dtvm_compile_from_asm(Dtvm* vm, String source) {
     String fn_name      = {0}; 
     int i = 0;
 
+
     FILE* trace_file = vm->asmtracef;
 
     dta_trace(trace_file, "\n### COMPILING ASSEMBLY ###\n");
     do {
         // TODO: figure out a way to reset code without having problems.
         Instructions code   = {0};
+        DtSymbolMap symbols = dta_init_symbol_map();
+        
         // arguments data
         size_t  argc = 0;
         // TODO: make this flexible, maybe?
@@ -658,7 +719,8 @@ void dtvm_compile_from_asm(Dtvm* vm, String source) {
         leftovers = dtvm_bytecode_compile(
                 trace_file,
                 &allocator, 
-                &code, 
+                &symbols,
+                &code,
                 leftovers, 
                 &fn_name, 
                 &argv);
@@ -670,8 +732,10 @@ void dtvm_compile_from_asm(Dtvm* vm, String source) {
         dta_trace(trace_file, "]\n");
 
         Function fn = dtvm_function_pack(fn_name, &code, argv.items, argv.count);
+        fn.variable_symbols = symbols.unique_symbols;
         da_append(&(vm->functions), fn);
-
+        
+        dta_free_symbol_map(&symbols);
         // memset(code.items, 0, code.count * sizeof(code.items[0]));
     } while(!str_is_empty(leftovers));
     arena_free(&allocator);

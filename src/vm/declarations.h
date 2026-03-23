@@ -147,7 +147,12 @@ typedef struct ObjectMap {
 } ObjectMap;
 
 typedef struct {
-    ObjectMap   buf[DTVM_SCOPES];
+    size_t prev_pointer, count;
+} ScopeStackFrame;
+
+typedef struct {
+    ObjectMap       buf             [DTVM_SCOPES];
+    ScopeStackFrame object_frames   [DTVM_SCOPES];
     size_t      top, count;
 } Scopes;
 
@@ -157,6 +162,7 @@ typedef struct Instruction {
     union {
         struct {
             String ident;
+            size_t id;
         } load, store, call;
 
         struct {
@@ -204,6 +210,7 @@ typedef struct {
     void* memory;
     // data section
     size_t  symbol_count; // total=(args + instruction ids) symbols
+    size_t  variable_symbols;
     // code section
     Instructions code;
 } Function;
@@ -226,9 +233,11 @@ typedef struct {
     //Arena           allocator; 
     Functions       functions;
 
-    size_t          sp;
+    size_t          top;
+    size_t          work_sp, data_sp;
     Object          returned_object;
-    Object          stack[DTVM_STACK_CAPACITY];
+    Object          work_stack[DTVM_STACK_CAPACITY];
+    Object          data_stack[DTVM_STACK_CAPACITY];
    
     Scopes          scopes;
     FILE            *logf, *asmtracef, *tracef, *writef;
@@ -245,14 +254,13 @@ bool string_is_identifier   (String s);
 String   string(const char* str);
 bool     string_cmp(String l, String r);
 
-
 // DT OBJECTS 
 static inline Object object_byte(char c);
 static inline Object object_int(int i);
 static inline Object object_float(float f);
 static inline Object object_string(String s);
 
-Object*     object_get  (ObjectMap* map, String id);
+Object*     object_get  (Dtvm* map, size_t id);
 Object      object_store(Object* ref, Object value);
 Object*     object_reserve_or_get(ObjectMap* map, String id);
 
@@ -264,7 +272,7 @@ void        dtvm_free_scope(ObjectMap* scope);
 //
 void        dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip);
 Function*   dtvm_get_function(Dtvm* vm, String fnid);
-Object      dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc);
+Object      dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc, size_t datasp);
 void        dtvm_if(Dtvm* vm, Function* fn);
 void        dtvm_push(Dtvm* vm, Object value);
 

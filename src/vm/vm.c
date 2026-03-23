@@ -2,23 +2,23 @@
 #include "assembler.c"
 
 void dtvm_push(Dtvm* vm, Object value) {
-    assert(vm->sp != DTVM_STACK_CAPACITY && "Stack overflow");
-    vm->stack[vm->sp++] = value;
+    assert(vm->work_sp != DTVM_STACK_CAPACITY && "Stack overflow");
+    vm->work_stack[vm->work_sp++] = value;
 }
 
 Object dtvm_pop(Dtvm* vm) {
-    assert(vm->sp != 0 && "Stack underflow");
-    return vm->stack[--vm->sp];
+    assert(vm->work_sp != 0 && "Stack underflow");
+    return vm->work_stack[--vm->work_sp];
 }
 
 Object dtvm_peek(Dtvm* vm) {
-    assert(vm->sp != 0 && "Stack underflow");
-    return vm->stack[vm->sp-1];
+    assert(vm->work_sp != 0 && "Stack underflow");
+    return vm->work_stack[vm->work_sp-1];
 }
 
 Object* dtvm_refer(Dtvm* vm) {
-    assert(vm->sp != 0 && "Stack underflow");
-    return vm->stack + vm->sp-1;
+    assert(vm->work_sp != 0 && "Stack underflow");
+    return vm->work_stack + vm->work_sp-1;
 }
 
 
@@ -52,9 +52,9 @@ void objectmap_print_values(ObjectMap m) {
 }
 
 void dtvm_print_stack(Dtvm *vm) {
-    Object* stack = vm->stack;
+    Object* stack = vm->work_stack;
     if(vm->tracef) 
-        for(size_t i = 0;  i < vm->sp && i < DTVM_STACK_CAPACITY; i++)
+        for(size_t i = 0;  i < vm->work_sp && i < DTVM_STACK_CAPACITY; i++)
         {
             Object* iter = stack + i;
             fprintf(vm->tracef,"%06lu\t", i);
@@ -118,30 +118,17 @@ static inline Object object_result() {
 
 // TODO: use hash function to get the index for next two functions
 // {
-Object* object_get(ObjectMap* map, String id) {
-    Object *v = 0;
-    assert(hc_map_load(map->map_head) < 1.0); // handle this later
-    assert(sizeof(*v) == map->map_head.typesize && "MISMATCH IN MAP ITEMS TYPE SIZE AND GIVEN ITEM");
-    MapKeySlice key = {id.ptr, id.len};
-    long int i = hc_map_query(map->map_head, key);
-    // doesn't exist
-    if(i == -1) return NULL;
-    // exists
-    return map->items + i;
+Object* object_get(Dtvm* vm, size_t id) {
+    assert(id < DTVM_STACK_CAPACITY && "stack underflow or overflow");
+    assert(vm->data_sp < DTVM_STACK_CAPACITY && "data stack got corrupted (underflow)");
+    Object* v = vm->data_stack + id;
+    // assert(!str_is_empty(v->id)); // variable has to have a name on data stack.
+    return v;
 }
-
-
-Object* object_reserve_or_get(ObjectMap* map, String id) {
-    assert(hc_map_load(map->map_head) < 1.0); // handle this later
-    Object* obj = hc_map_get_or_reserve(
-            map, 
-            hc_map_slice(id.ptr, id.len));
-    return  obj;
-}
-
 
 // TODO: proper error stack?
 Object object_store(Object* ref, Object value) {
+    if(!str_is_empty(value.id)) ref->id = value.id;
     if (!ref->type) {
         if(string_cmp(ref->id,STRING_NULL))
             *ref = value;
@@ -318,7 +305,7 @@ void object_write(FILE* f, Object o) {
 
 Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
     // Get current object pool
-    ObjectMap*  scope = dtvm_get_scope(vm);
+    // ObjectMap*  scope = dtvm_get_scope(vm);
     Object      result = {0};
 
     switch (inst.kind) {
@@ -330,17 +317,27 @@ Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
 
         case DTI_STORE: 
             {
-                String  id  = inst.as.store.ident;
+                String  identifier  = inst.as.store.ident;
+                size_t dp = vm->data_sp + inst.as.store.id;
+
                 Object obj  = dtvm_pop(vm);
-                Object* tp  = object_reserve_or_get(scope, id);
+                Object* tp  = object_get(vm, dp);
                 object_store(tp, obj);
+            } break;
+
+        case DTI_LOAD:
+            {
+                size_t dp = vm->data_sp + inst.as.load.id;
+                Object* obj = object_get(vm, dp);
+                assert(obj);
+                dtvm_push(vm, *obj);
             } break;
 
         case DTI_RET:
             {
                 result = dtvm_pop(vm);
                 // entry point
-                if(vm->scopes.top == 0) {
+                if(vm->top == 0) {
                     // TODO mirgrate memory if needed.
                     vm->returned_object = result;
                 }
@@ -359,24 +356,24 @@ Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
                 for(int i = (int)fn->argc - 1; i >= 0; i--) 
                     fn_args[i] = dtvm_pop(vm);
 
-                size_t prev_sp = vm->sp;
-                vm->scopes.top++;
+                size_t  prev_sp = vm->work_sp,
+                        data_sp = vm->data_sp;
+                vm->top++;
+                size_t sym_count = fn->variable_symbols;
+
+                // data stack pointer increases by funtion count of symbols
+                if(vm->top > 1) vm->data_sp += sym_count;
+                // call
+                Object ret = dtvm_call(vm, id, fn_args, fn->argc, data_sp);
+                // restore
+                if(vm->top > 1) vm->data_sp -= sym_count;
+                vm->work_sp = prev_sp;
                 
-                Object ret = dtvm_call(vm, id, fn_args, fn->argc);
-                
-                vm->sp = prev_sp;
                 dtvm_push(vm,ret);
-
                 // printf("call to %.*s\n", str_fmt(id));
-                vm->scopes.top--;
+                vm->top--;
             } break;
 
-        case DTI_LOAD:
-            {
-                Object* obj = object_get(scope, inst.as.load.ident);
-                assert(obj);
-                dtvm_push(vm, *obj);
-            } break;
 
 
         case DTI_IJIF:
@@ -478,38 +475,6 @@ Function* dtvm_get_function(Dtvm* vm, String fnid) {
     return fn;
 }
 
-// TODO: make this flexible or something.
-ObjectMap dtvm_init_objectmap(void) {
-    const ObjectMap reference = {0};
-    ObjectMap map = {
-        .items      = calloc(sizeof(*reference.items), DTVM_OBJECT_MAP_CAPACITY),
-        .map_head   = hc_map_heap(DTVM_OBJECT_MAP_CAPACITY, sizeof(*reference.items))
-    };
-    hc_map_set_default_hashes(&map.map_head);
-    return map;
-}
-
-void dtvm_free_scope(ObjectMap* s) {
-    assert(s->items);
-    free(s->items);
-    hc_map_heap_free(&(s->map_head));
-    memset(s, 0, sizeof(*s));
-}
-
-ObjectMap* dtvm_get_scope(Dtvm* vm) {
-    ObjectMap* current = vm->scopes.buf + vm->scopes.top;
-    if(vm->scopes.top >= vm->scopes.count) {
-        vm->scopes.count++;
-        *current = dtvm_init_objectmap();
-    } 
-    return current;
-}
-
-void dtvm_clear_scope(ObjectMap* map) {
-    memset(map->items, 0, sizeof(*map->items) * map->map_head.capacity);
-    hc_map_clear(&(map->map_head));
-}
-
 void dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip) {
     if(vm->tracef) {
         fprintf(vm->tracef, "F:%04lu\t %06lu > %s\n", 
@@ -522,14 +487,13 @@ void dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip) {
     }
 }
 
-Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
+Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc, size_t data_sp) {
     // find function or return result 
     Function *fn = dtvm_get_function(vm, fnid);
     assert(fn && "Called function is undefined");
     // Get current object pool
-    ObjectMap* scope = dtvm_get_scope(vm);
 
-    assert(vm->scopes.top <= 100 && "EXCEEDED CALL DEPTH");
+    assert(vm->top <= DTVM_STACK_CAPACITY && "EXCEEDED CALL DEPTH");
 
     // Push all arguments 
     assert(fn->argc == argc);
@@ -537,7 +501,8 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
         Object obj  = argv[i];
         String obj_name = fn->argv[i];
         // fprintf(stderr,"obj.id[%i] = %.*s\n", i, slice_fmt(obj.id));
-        Object* tp  = object_reserve_or_get(scope, obj_name);
+        size_t dsp = data_sp + i;
+        Object* tp  = object_get(vm, dsp);
         object_store(tp, obj);
     }
     // Execute instructions TODO(until ret, nop is encountered) or 
@@ -552,8 +517,8 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc) {
             return result;
     }
 
-    dtvm_clear_scope(scope);
-    objectmap_print_values(*scope);
+    // dtvm_clear_scope(scope);
+    // objectmap_print_values(*scope);
     //__asm__("int3");
 
 
@@ -569,7 +534,7 @@ void dtvm_free(Dtvm* vm) {
         free(vm->functions.items[i].memory);
     for(size_t i = 0; i < vm->scopes.count; i++) {
         // TODO: !IMPORTANT free all the arena data.
-        dtvm_free_scope(vm->scopes.buf + i);
+        // dtvm_free_scope(vm->scopes.buf + i);
     }
     
     free(vm->functions.items);

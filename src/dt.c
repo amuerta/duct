@@ -88,7 +88,7 @@ bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* sou
 
 void dt_run(DtInterpreter* interpreter, const char* entry_point) {
     Dtvm* vm = &(interpreter->vm);
-    dtvm_call(vm, string(entry_point), NULL, 0);
+    dtvm_call(vm, string(entry_point), NULL, 0, 0);
     dtvm_print_stack(vm);
 }
 
@@ -107,6 +107,8 @@ void dt_reset(DtInterpreter* interpreter) {
 
 void dt_run_reset(DtInterpreter* interpreter, const char* entry_point) {
     dt_run  (interpreter, entry_point);
+
+    fprintf(stderr, "\tData stack pointer : %lu\n", interpreter->vm.data_sp);
     dt_reset(interpreter);
 }
 
@@ -182,21 +184,32 @@ int main(void) {
         .outputf = stdout,
     };
 
-    // const char* source = str_multiline(
-    //     main() {
-    //         write("hello world\n")
-    //     }
-    // );
-    
+    // TODO: print("string"i) or print(i"string")
+    // is not correctly errored and instead compiled into recursive mess.
     const char* source = str_multiline(
+        add(a,b) {
+            c = b + a
+            return c
+        }
+
         main() {
             i = 0
-            while i < 10 {
-                print("number i : ", i, "\n");
-                i=i+1
+            while i < 20 {
+                print(i)
+                i = add(i,1)
             }
         }
     );
+    
+    // const char* source = str_multiline(
+        // main() {
+            // i = 0
+            // while i < 10 {
+                // print(i, "\n");
+                // i=i+1
+            // }
+        // }
+    // );
 
     // const char* source = str_multiline(
     //         main() {
