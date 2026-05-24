@@ -1,0 +1,14 @@
+
+main() {
+    TABLE = {
+        string = "hello world",
+        number = 10,
+        floater = 10.1,
+        set = { 
+            values = [1,2],
+            list = $[3,{}]
+        }
+    }
+
+    array = TABLE.set.values
+}

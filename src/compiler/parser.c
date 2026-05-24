@@ -800,7 +800,7 @@ DtParseResult dtp_function_call(DtParser* p, int depth, bool parent_is_expressio
     enum {
         BUILDIN_NOT_BUILD_IN,
         BUILDIN_PRINT,
-    } buildin_function;
+    } buildin_function = 0;
 
     dtp_expect_kind (p,p->current_token, TOKEN_KIND_WORD, "Expected word");
     name = p->current_token;
@@ -1322,6 +1322,8 @@ DtParseResult dtp_value(DtParser* p, int depth) {
                 (match_true = (dtp_match_str(name, "true"))) || 
                 dtp_match_str(name, "false")
             ){
+
+                dtp_emmit_asm(sb, this_res, "\tpush %.*s \n", tkn_fmt(name.data.as_word))
                 // self->kind = NK_BOOLIT;
                 // self->identifier = name;
                 break; 

@@ -1,0 +1,9 @@
+add(l,r) {return l + r}
+sub(l,r) {return l - r}
+mul(l,r) {return l * r}
+
+main() {
+    print("Result of add(sub(10,2), mul(17,3)) = ",
+            add(sub(10,2), mul(17,3))
+    )
+}

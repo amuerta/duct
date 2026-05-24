@@ -1,0 +1,19 @@
+fibi(n) {
+    last = 1
+    prev = 0
+    i = 0
+    while i < n {
+        print(last, "\n")
+        
+        next = prev + last
+        prev = last
+        last = next
+
+        i = i+1
+    }
+    
+}
+
+main() {
+    fibi(40)
+}

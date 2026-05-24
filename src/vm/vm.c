@@ -353,6 +353,7 @@ Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
 
                 // TODO: move this some better place
                 Object fn_args[64] = {0};
+                // for(int i = (int)fn->argc - 1; i >= 0; i--) 
                 for(int i = (int)fn->argc - 1; i >= 0; i--) 
                     fn_args[i] = dtvm_pop(vm);
 
@@ -362,12 +363,14 @@ Object dtvm_exec_step(Dtvm* vm, Function* fn, Instruction inst, size_t* ip) {
                 size_t sym_count = fn->variable_symbols;
 
                 // data stack pointer increases by funtion count of symbols
-                if(vm->top > 1) vm->data_sp += sym_count;
+                // if(vm->top > 1) 
+                    vm->data_sp += sym_count;
                 // call
-                Object ret = dtvm_call(vm, id, fn_args, fn->argc, data_sp);
+                Object ret = dtvm_call(vm, id, fn_args, fn->argc, vm->data_sp);
                 // restore
                 if(vm->top > 1) vm->data_sp -= sym_count;
                 vm->work_sp = prev_sp;
+                vm->data_sp = data_sp;
                 
                 dtvm_push(vm,ret);
                 // printf("call to %.*s\n", str_fmt(id));
@@ -477,11 +480,15 @@ Function* dtvm_get_function(Dtvm* vm, String fnid) {
 
 void dtvm_trace_execution(Dtvm* vm, Instruction inst, size_t ip) {
     if(vm->tracef) {
-        fprintf(vm->tracef, "F:%04lu\t %06lu > %s\n", 
+        fprintf(vm->tracef, "F:%04lu\t %06lu > %s", 
                 vm->scopes.top,
                 ip,
                 dtvm_decompile_instruction(inst)
                );
+        if(inst.kind == DTI_LOAD || inst.kind == DTI_STORE) {
+            fprintf(vm->tracef, "+dsp(%lu)", vm->data_sp);
+        }
+        fprintf(vm->tracef, "\n");
         dtvm_print_stack(vm);
         fprintf(vm->tracef, "----------------------------\n");
     }
@@ -500,9 +507,10 @@ Object dtvm_call(Dtvm* vm, String fnid, Object* argv, int argc, size_t data_sp) 
     for(size_t i = 0; i < fn->argc; i++) {
         Object obj  = argv[i];
         String obj_name = fn->argv[i];
-        // fprintf(stderr,"obj.id[%i] = %.*s\n", i, slice_fmt(obj.id));
+        // fprintf(stderr,"obj.id[%lu] = %.*s\n", i, slice_fmt(obj.id));
         size_t dsp = data_sp + i;
         Object* tp  = object_get(vm, dsp);
+        if(vm->tracef) fprintf(vm->tracef, "data stack pointer (id+fsp) = %lu\n", dsp);
         object_store(tp, obj);
     }
     // Execute instructions TODO(until ret, nop is encountered) or 

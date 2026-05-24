@@ -1,0 +1,8 @@
+main() {
+    i = 0; n = 10
+    print("Printing numbers from ", i, " to ", n - 1, "\n", "")
+    while i < n {
+        print("i = ", i, "\n", "")
+        i = i + 1
+    }
+}

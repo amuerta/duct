@@ -1,0 +1,12 @@
+recursive_print(n) {
+    if n > 0 {
+        print(n, "\n")
+            recursive_print(n - 1)
+    }
+    return 0
+}
+
+main() {
+    n = 10
+        recursive_print(n)
+}

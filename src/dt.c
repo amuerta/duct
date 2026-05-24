@@ -1,191 +1,92 @@
 #include <stdio.h>
-#include "compiler/dtc.h"
-#include "vm/dtvm.h"
+#include <unistd.h>
+#include "dt.h"
 
-// MAIN
-
-#define dti_opt(dti, opt) ((dti).options & (opt))
-
-
-typedef struct {
-    DtParser        parser;
-    Dtvm            vm;
-    bool            have_set_trace_file;
-    FILE            *tracef,
-                    *errorf;
-    FILE    *trace_vm_execution_f,
-            *trace_vm_assembly_f,
-            *trace_compiler_ast_f;
-
-    int options;
-    FILE *outputf;
-} DtInterpreter;
-
-void dt__prepare_parser(DtInterpreter* interpreter) {
-    if(interpreter->have_set_trace_file) return;
-
-    interpreter->parser.function_symbols = dtp_init_function_symbols();
-    interpreter->parser.tracef = interpreter->trace_compiler_ast_f; 
-}
-
-void dt__prepare_vm(DtInterpreter* interpreter) {
-    Dtvm* vm = &(interpreter->vm);
-
-    if(interpreter->have_set_trace_file) return;
-
-    interpreter->vm.writef     = interpreter->outputf; 
-    interpreter->vm.tracef     = interpreter->trace_vm_execution_f; 
-    interpreter->vm.asmtracef  = interpreter->trace_vm_assembly_f; 
-
-    // vm assembly tracing
-    if(dti_opt(*interpreter, DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION)) {
-        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
-            assert(vm->asmtracef && "expected to have assembler trace file to be initilized");
-        else { if(!vm->asmtracef) vm->asmtracef = stderr; }
-    }
-
-    // vm execution tracing
-    if(dti_opt(*interpreter, DT_OPT_TRACE_VM_EXECUTION)) {
-        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
-            assert(vm->tracef && "expected to have vm execution trace file to be initilized");
-        else { if(!vm->tracef) vm->tracef = stderr; }
-    }
-}
-
-void dt_prepare(DtInterpreter* interpreter) {
-    if(!interpreter->have_set_trace_file) {
-        dt__prepare_parser(interpreter);
-        dt__prepare_vm(interpreter);
-    }
-}
-
-bool dt_compile_assembly_from_string(DtInterpreter* interpreter, const char* source, size_t length) {
-    bool result = true;
-    DtInterpreter* itrp = interpreter;
-    DtParser* parser = &(interpreter->parser);
+int main(int argc, char* argv[]) {
+    bool no_run = false;
+    bool buildin_exec = false;
+    bool read_stdin = false;
+    bool trace_vm = false;
+    bool be_quiet = false;
+    const char* source = NULL;
     
-    parser->lexer           = DtTokenizer_init(source, length);
-    parser->options_mirror  = itrp->options;
-    
-    // check for initilized trace file.
-    if(dti_opt(*interpreter, DT_OPT_TRACE_COMPILER_AST_WALKING)) {
-        if(dti_opt(*interpreter, DT_OPT_EXPECT_INITILIZED_STREAM_FILES)) 
-            assert(parser->tracef && "expected to have AST trace file to be initilized");
-        else { if(!parser->tracef) parser->tracef = stderr; }
+    for(int i = 1; i < argc; i++) {
+        if(argv[i] && (
+                    !strcmp(argv[i], "--quiet")     ||
+                    !strcmp(argv[i], "--bequiet")   ||
+                    !strcmp(argv[i], "bequiet")     ||
+                    !strcmp(argv[i], "quiet") 
+                    )) {
+            be_quiet = true;
+        } else if (argv[i] &&
+                (
+                    !strcmp(argv[i], "stdin")     ||
+                    !strcmp(argv[i], "--stdin")   ||
+                    !strcmp(argv[i], "read")     ||
+                    !strcmp(argv[i], "--read") 
+                   )) {
+            read_stdin = true;
+        } else if (argv[i] && (!strcmp(argv[i], "--tracevm") || !strcmp(argv[i], "tracevm"))) {
+            trace_vm = true;
+        } else if (argv[i] && (!strcmp(argv[i], "--buildin") || !strcmp(argv[i], "buildin"))) {
+            buildin_exec = true;
+        } else if (argv[i] && (!strcmp(argv[i], "--norun") || !strcmp(argv[i], "norun"))) {
+            no_run = true;
+        }
+
+
     }
 
-    dtp_parse(parser, 0);
-    fprintf(stderr, "GATHERED ASSEMBLY: ----\n%.*s\n----------\n",
-            sb_fmt(parser->output)
-    );
-    //DtNode* root = dtp_block(&parser, 0, false);
-    // dtp_print_ast(root, 0, stdout);
-    arena_free(&itrp->parser.allocator);
-    return result;
-}
+    if (!isatty(STDIN_FILENO) && 1) {
+        static char file[1024], line[128];
+        
+        while (fgets(line, sizeof(line), stdin) != NULL) {
+            strncat(file, line, sizeof(file)-1);
+        }
+        source = file;
+    } else if(argc > 1 && argv[1]) {
+        source = argv[1];
+    } else if (buildin_exec) {
 
-// TODO: api nob style like `cmd_append()`
-
-void dt_run(DtInterpreter* interpreter, const char* entry_point) {
-    Dtvm* vm = &(interpreter->vm);
-    dtvm_call(vm, string(entry_point), NULL, 0, 0);
-    dtvm_print_stack(vm);
-}
-
-
-void dt_reset(DtInterpreter* interpreter) {
-    FILE *tracef = interpreter->tracef, 
-         *outputf = interpreter->outputf,
-         *errorf = interpreter->errorf;
-    dtvm_free                   (&interpreter->vm);
-    dtp_free_function_symbols   (&(interpreter->parser.function_symbols));
-    free(interpreter->parser.output.items);
-    interpreter->tracef = tracef;
-    interpreter->outputf = outputf;
-    interpreter->errorf = errorf;
-}
-
-void dt_run_reset(DtInterpreter* interpreter, const char* entry_point) {
-    dt_run  (interpreter, entry_point);
-
-    fprintf(stderr, "\tData stack pointer : %lu\n", interpreter->vm.data_sp);
-    dt_reset(interpreter);
-}
-
-void dt_compile(DtInterpreter* interpreter, const char* source) {
-    DtInterpreter*  itrp    = interpreter;
-    Dtvm*           vm      = &(itrp->vm);
-    dt_prepare(interpreter);
-    dt_compile_assembly_from_string(interpreter, source, strlen(source));
-    String assembly = {
-        itrp->parser.output.items,
-        itrp->parser.output.count
-    };
-    dtvm_compile_from_asm(vm, assembly);
-}
-
-void dt_compile_run_reset(DtInterpreter* interpreter, const char* source) {
-    dt_compile(interpreter, source);
-
-    // for(size_t i = 0; i<vm->functions.count; i++) {
-    //     printf("vm.functions[%lu] = '%.*s'\n", i, str_fmt(vm->functions.items[i].id));
-    //     Function fn = vm->functions.items[i];
-    //     for(size_t in = 0; in < fn.code.count; in++) {
-    //         printf("\t> %lu kind: %i\n", in, fn.code.items[in].kind);
-    //     }
-    // }
-    // dtvm_add_function(&vm, fn1);
-    // dtvm_add_function(&vm, fn2);
-    dt_run_reset(interpreter, "main");
-}
-
-void dt_append_assembly(DtInterpreter* inter,  const char* assembly) {
-    dt_prepare(inter);
-    dtvm_compile_from_asm(&(inter->vm), str_make(assembly));
-}
-
-// TODO:
-// function signatures are checked and added at compilation time
-// arrays are linear and one type only
-// lists are type ignorant, can be of any type
-// objects are like lists, but each member has NAME (identifier).
-// implement loops
-// implement arrays and indexing.
-// implement lists.
-// 
-// LATER:
-// - constant folding
-
-// TODO: 
-// - dtp_progragate for applying generated_instructions info and possible parse errors.
-// - reduce boiler plate related to incrementing instructions emmited
-// - sane reservation of space for instruction when compiling assembly.
-// - make example interpreter emmit assembly of the code.
-// - push string literalls and manage memory for them.
-
-
-int main(void) {
-    // const char* file = "./examples/parsing_00.dt";
-    // char* txt = dt_load_file(file);
-    // if (!txt) {
-    //     printf("%s\n", strerror(errno));
-    //     return 1;
-    // }
+    }
+    else {
+        fprintf(stderr, "USAGE: %s { [file <PATH>] | <SCRIPT_SOURCE> }", argv[0]);
+        exit(1);
+    }
 
     DtInterpreter interp = {
 
-        .options = 0 
+        .options = (be_quiet)? 0 : 
+            0 
             // | DT_OPT_EXPECT_INITILIZED_STREAM_FILES
-            // | DT_OPT_TRACE_VM_EXECUTION               
-            | DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION    
-            | DT_OPT_TRACE_COMPILER_AST_WALKING       
+            | (DT_OPT_TRACE_VM_EXECUTION * trace_vm)
+            | (DT_OPT_TRACE_VM_ASSEMBLY_COMPILATION * !no_run)   
+            | (DT_OPT_TRACE_COMPILER_AST_WALKING)
         ,
-        .tracef  = stderr,
+        .tracef  = be_quiet ? NULL : stderr,
         .outputf = stdout,
     };
 
     // TODO: print("string"i) or print(i"string")
     // is not correctly errored and instead compiled into recursive mess.
+
+    if(buildin_exec) 
+        source = str_multiline(
+            recursive_print(n) {
+                if n > 0 {
+                    print(n, "\n")
+                    recursive_print(n - 1)
+                }
+                return 0
+            }
+
+            main() {
+                n = 10
+                recursive_print(n)
+            }
+        );
+
+#if 0
     const char* source = str_multiline(
         add(a,b) {
             c = b + a
@@ -194,13 +95,12 @@ int main(void) {
 
         main() {
             i = 0
-            while i < 20 {
-                print(i)
-                i = add(i,1)
+            while i < 5 {
+                i = i + 1
             }
         }
     );
-    
+#endif
     // const char* source = str_multiline(
         // main() {
             // i = 0
@@ -265,11 +165,13 @@ int main(void) {
                 "pop\n"
             "endfn\n"
     );
-    // dt_compile(&interp, source);
     // dt_reset(&interp);
-    dt_compile_run_reset(&interp, source);
+    if(no_run) {
+        dt_compile(&interp, source);
+    } else {
+        dt_compile_run_reset(&interp, source);
+    }
     // dt_run_reset(&interp, "main");
-
     // printf("\n");
     // TODO: check for empty file
     // free(txt);

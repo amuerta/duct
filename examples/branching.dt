@@ -1,0 +1,11 @@
+main() {
+    number = 10
+    print("Number is: ", number, "\n", "")
+    if number > 10 {
+        print("number is bigger than 10")
+    } else if number == 10 {
+        print("number is equal to 10")
+    } else {
+        print("number is less than 10")
+    }
+}

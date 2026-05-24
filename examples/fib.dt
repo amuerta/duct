@@ -1,0 +1,13 @@
+fib(number) {
+    if number <= 1 { return number }
+    return fib(number-1) + fib(number-2)
+}
+
+main() {
+    i = 1
+    while i < 20 {
+        res = fib(i)
+        print(res, "\n")
+        i = i + 1
+    }
+}

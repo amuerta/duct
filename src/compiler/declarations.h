@@ -95,28 +95,21 @@ typedef struct {
 typedef struct {
 	char*		scratch_buffer;
     size_t		scratch_buffer_sz;
-
     // config or user options
     bool                skip_newline;
     symbol_t 			string_quotes[2];
     const char*         comment_block[2];
-
     // line tracking
     size_t              row;
     size_t              col;
-	
     // string info
     const char* 		target;
 	size_t				target_length;
 	size_t 				position;
-
     // user input table
 	TokenTableEntry*	token_table;
 	size_t				token_table_count;
-
-    // memory for linear allocation of tokens
-    // arena kind of
-	Tokens		        tokens;
+    Tokens              tokens;
 } Tokenizer;
 
 
@@ -204,8 +197,21 @@ typedef enum {
 } DtParseNodeKind;
 
 typedef struct {
+    unsigned type;
+    union {
+        byte b;
+        char c;
+        int i;
+        long l;
+        float f;
+        double d;
+    } as;
+} DtAtomValue;
+
+typedef struct {
     bool negative_sign;
     bool foldable_constant;
+    DtAtomValue atom;
 } DtParseValue;
 
 typedef struct {

@@ -93,7 +93,7 @@ const char* dtvm_decompile_instruction(Instruction i) {
 
     switch (i.kind) {
 
-             /*INSTRUCTIONS WINO ARGUMENTS*/
+             /*INSTRUCTIONS WITH ARGUMENTS*/
         case DTI_NOP:
              sb_appendf(&sb, "nop"); break;
         case DTI_DUP:
@@ -277,12 +277,22 @@ LineResult dtvm_compile_instruction(Arena* allocator, DtSymbolMap* symbols,  Str
         else if (str_is_float(operand)) {
             nf = string_to_float(operand);
             inst.as.push.object = object_float(nf);
-        } else { // must be string literall
+        
+        } 
+
+        else if(match(leftover, "true") || match(leftover, "false")) {
+            inst.as.push.object = object_bool(match(leftover, "true"));
+        }
+
+        else { // must be string literall
 
             // fprintf(stderr, "\t\tBEFORE: '%.*s':%li\n", (int)operand.len, operand.ptr, operand.len);
             // fprintf(stderr, "\t\tLEFT: '%.*s':%li\n", (int)leftover.len, leftover.ptr, leftover.len);
             // I should really remake this assembler with tokenize.h...
             // NOTE: USE LEFTOVER NOT OPERAND!!
+            
+
+
             size_t n = tkn_parse_string(leftover.ptr, leftover.len, NULL, NULL, '\"');
             if(!n || n == -1) {
                 *status = DTSTAT_INVALID_OPERAND_TYPE;

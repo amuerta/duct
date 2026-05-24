@@ -255,6 +255,7 @@ String   string(const char* str);
 bool     string_cmp(String l, String r);
 
 // DT OBJECTS 
+static inline Object object_bool(bool b);
 static inline Object object_byte(char c);
 static inline Object object_int(int i);
 static inline Object object_float(float f);

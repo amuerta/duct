@@ -1,11 +1,15 @@
 /* block comment */
 // single line comment
 
+include "array"
+
 // global variables
 num = 10;
 str = "Josh";
 bl  = true;
 flt = 10.5;
+
+const N = 20;
 
 // enum - just a list of numeric constants
 enum {
@@ -31,18 +35,25 @@ main() {
     b = true
     s = "hello world!\n"
     arr = [1,2,3,4]
-    list = <1,2,"can hold different types unlike arrays",4>
+    list = @{1,2,"can hold different types unlike arrays",4}
     obj = { name = "dude", age = 32 }
 
+    // list is indexed like tuples in Rust
+    print(list.2)
+
     if n > 10 {
-        print("number n is is greater than 10: \n", n)
+        print("number n is is greater than 10: ", n)
     } else {
-        print("less or equal to 10\n")
+        print("less or equal to 10")
     }
     
     array = array_fill(10, 1)
-    for i = 0 to 10 {
+    loop i = 0 to 10 {
         print("i",i,  " = ", array[i])
+    }
+
+    for i = 0; i < 10; i++ {
+        
     }
 
     vector = { x = 10, y = 20 }
